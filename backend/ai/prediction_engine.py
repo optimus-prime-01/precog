@@ -68,14 +68,63 @@ class PredictionEngine:
     async def detect_all_predictions(self):
         """Run all prediction types."""
         print("[Prediction Engine] Running analysis...")
+        await self._detect_from_all_events()
         await self._detect_convergent_signals()
         await self._detect_causal_chain_extensions()
         print("[Prediction Engine] Analysis complete.")
 
-    async def _detect_convergent_signals(self):
-        """Type 1: Find entities with 3+ recent signals from different sources."""
+    async def _detect_from_all_events(self):
+        """Analyze ALL recent events together for cross-cutting patterns."""
         async with neo4j_driver.session() as session:
-            # Find entities with multiple recent events from different scrapers
+            # Check if we already have predictions
+            existing = await session.run("MATCH (p:Prediction) RETURN count(p) AS c")
+            if (await existing.single())["c"] >= 5:
+                return  # enough predictions already
+
+            r = await session.run("""
+                MATCH (evt:Event)
+                OPTIONAL MATCH (ent:Entity)-[:PARTICIPATES_IN]->(evt)
+                WITH evt, collect(ent.name) AS entities
+                RETURN evt.title AS title, entities
+                ORDER BY evt.ingestion_time DESC LIMIT 20
+            """)
+            events = [record.data() async for record in r]
+
+            if len(events) < 3:
+                return
+
+            try:
+                result = await ask_claude_json(
+                    """You are a predictive intelligence engine. Analyze these recent events scraped from the web.
+Find convergent patterns: multiple events pointing toward the same outcome, emerging trends, or accelerating patterns.
+Generate 1-3 predictions based on the data.
+
+Return JSON:
+{"predictions": [{"text": "prediction text", "confidence": 0.7, "reasoning": "why this is likely", "timeframe": "within X days/weeks"}]}
+
+If no meaningful prediction, return {"predictions": []}""",
+                    f"Recent events: {events}",
+                )
+                for pred in result.get("predictions", []):
+                    if pred.get("confidence", 0) >= settings.prediction_confidence_threshold:
+                        pid = gen_id("pred_")
+                        await session.run(
+                            """CREATE (p:Prediction {
+                                id: $id, text: $text, confidence: $conf,
+                                prediction_type: 'convergent', reasoning: $reasoning,
+                                timeframe: $timeframe, created_at: datetime(), resolved: false
+                            })""",
+                            id=pid, text=pred["text"], conf=pred["confidence"],
+                            reasoning=pred.get("reasoning", ""), timeframe=pred.get("timeframe", ""),
+                        )
+                        print(f"  🔮 Prediction: {pred['text'][:80]}... ({pred['confidence']})")
+            except Exception as e:
+                print(f"  Prediction error: {str(e)[:80]}")
+
+    async def _detect_convergent_signals(self):
+        """Type 1: Find entities with 2+ recent signals."""
+        async with neo4j_driver.session() as session:
+            # Find entities with multiple recent events
             result = await session.run(
                 """
                 MATCH (ent:Entity)-[:PARTICIPATES_IN]->(evt:Event)
@@ -84,7 +133,7 @@ class PredictionEngine:
                      collect({title: evt.title, desc: evt.description,
                              source: evt.source_scraper, time: toString(evt.event_time),
                              id: evt.id}) AS signals
-                WHERE size(sources) >= 3
+                WHERE size(signals) >= 2
                 RETURN ent.name AS entity, ent.type AS type, signals
                 """
             )
