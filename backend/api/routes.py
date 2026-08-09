@@ -214,6 +214,14 @@ Reason over this data to answer the question. Trace causal chains and entity rel
     return {"question": question, "answer": answer}
 
 
+@router.post("/clear-graph")
+async def clear_graph():
+    """Clear all nodes and relationships from the graph."""
+    async with neo4j_driver.session() as session:
+        await session.run("MATCH (n) DETACH DELETE n")
+    return {"status": "ok", "message": "Graph cleared"}
+
+
 @router.post("/add-topic")
 async def add_topic(request: Request):
     """

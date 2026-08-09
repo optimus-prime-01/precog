@@ -21,12 +21,17 @@ export default function TopicInput({ onTopicAdded }: Props) {
   } | null>(null);
   const [open, setOpen] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (clearFirst: boolean = false) => {
     if (!topic.trim() || loading) return;
     setLoading(true);
     setResult(null);
 
     try {
+      // If "New Graph" — clear existing data first
+      if (clearFirst) {
+        await fetch("/api/clear-graph", { method: "POST" });
+      }
+
       const res = await fetch("/api/add-topic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -40,7 +45,7 @@ export default function TopicInput({ onTopicAdded }: Props) {
           setResult(null);
           setOpen(false);
           setTopic("");
-        }, 3000);
+        }, 4000);
       }
     } catch {
       setResult({ status: "error", message: "Failed to connect to backend" });
@@ -127,7 +132,24 @@ export default function TopicInput({ onTopicAdded }: Props) {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button
-            onClick={handleSubmit}
+            onClick={() => handleSubmit(true)}
+            disabled={loading || !topic.trim()}
+            style={{
+              flex: 1,
+              padding: "9px 0",
+              background: loading ? "#27272a" : "#22c55e",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: loading ? "wait" : "pointer",
+            }}
+          >
+            {loading ? "Scraping..." : "New Graph"}
+          </button>
+          <button
+            onClick={() => handleSubmit(false)}
             disabled={loading || !topic.trim()}
             style={{
               flex: 1,
@@ -141,7 +163,7 @@ export default function TopicInput({ onTopicAdded }: Props) {
               cursor: loading ? "wait" : "pointer",
             }}
           >
-            {loading ? "Scraping & Ingesting..." : "Build Graph"}
+            {loading ? "Scraping..." : "Add to Graph"}
           </button>
           {!loading && (
             <button

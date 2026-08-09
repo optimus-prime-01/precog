@@ -102,7 +102,12 @@ function buildGraph(data: GraphData, mode: ViewMode) {
     });
   }
 
-  // Bipartite edges hidden — too many connections create visual noise at scale
+  // Bipartite edges (entity ↔ event connections)
+  if (showEntities && showEvents) {
+    data.bipartite_edges.forEach((edge, i) => {
+      edges.push({ id: `bp-${i}`, source: edge.source, target: edge.target, style: { stroke: "#1e1e24", strokeWidth: 0.5, transition: "all 0.2s" } });
+    });
+  }
 
   return { nodes, edges };
 }
