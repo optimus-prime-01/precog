@@ -102,11 +102,7 @@ function buildGraph(data: GraphData, mode: ViewMode) {
     });
   }
 
-  if (showEntities && showEvents) {
-    data.bipartite_edges.forEach((edge, i) => {
-      edges.push({ id: `bp-${i}`, source: edge.source, target: edge.target, style: { stroke: "#1c1c20", strokeWidth: 0.5, transition: "all 0.2s" } });
-    });
-  }
+  // Bipartite edges hidden — too many connections create visual noise at scale
 
   return { nodes, edges };
 }
