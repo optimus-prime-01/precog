@@ -30,9 +30,10 @@ class BrightDataClient:
         Returns collector_id on success, None on failure.
         """
         cmd = ["npx", "-p", "@brightdata/cli", "bdata", "scraper", "create", url, description]
+        env = {**__import__("os").environ, "BRIGHTDATA_API_KEY": self.api_key}
         try:
             result = await asyncio.to_thread(
-                subprocess.run, cmd, capture_output=True, text=True, timeout=600
+                subprocess.run, cmd, capture_output=True, text=True, timeout=600, env=env
             )
             if result.returncode == 0:
                 # Parse collector ID from output
@@ -98,9 +99,10 @@ class BrightDataClient:
             "npx", "-p", "@brightdata/cli", "bdata", "scraper", "heal",
             collector_id, prompt, "--url", url, "--auto-approve",
         ]
+        env = {**__import__("os").environ, "BRIGHTDATA_API_KEY": self.api_key}
         try:
             result = await asyncio.to_thread(
-                subprocess.run, cmd, capture_output=True, text=True, timeout=300
+                subprocess.run, cmd, capture_output=True, text=True, timeout=300, env=env
             )
             return result.returncode == 0
         except Exception as e:

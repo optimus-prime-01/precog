@@ -72,10 +72,36 @@ DEFAULT_SCRAPER_SPECS = [
 ]
 
 
+# Already-created scrapers from previous bdata CLI runs
+EXISTING_SCRAPERS = [
+    {
+        "collector_id": "c_mslxoc89hn79n1fn1",
+        "name": "hackernews_brightdata",
+        "url": "https://news.ycombinator.com/",
+        "description": "HN stories via Bright Data Scraper Studio",
+        "source_type": "social",
+        "refresh_minutes": 15,
+    },
+]
+
+
 class ScraperOrchestrator:
 
     async def initialize_scrapers(self, specs: list[dict] | None = None):
-        """Create all scrapers via bdata CLI."""
+        """Register existing scrapers + create new ones via bdata CLI."""
+        # First register already-created scrapers
+        for ex in EXISTING_SCRAPERS:
+            entry = ScraperEntry(
+                collector_id=ex["collector_id"],
+                name=ex["name"],
+                url=ex["url"],
+                description=ex["description"],
+                source_type=ex["source_type"],
+                refresh_minutes=ex["refresh_minutes"],
+            )
+            registry.register(entry)
+            print(f"  ✓ Registered existing: {ex['name']} → {ex['collector_id']}")
+
         specs = specs or DEFAULT_SCRAPER_SPECS
         print(f"[Orchestrator] Creating {len(specs)} scrapers...")
 

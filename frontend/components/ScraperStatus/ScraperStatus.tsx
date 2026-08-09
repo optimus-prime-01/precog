@@ -10,31 +10,36 @@ interface Scraper {
 }
 
 export default function ScraperStatus({ scrapers }: { scrapers: Scraper[] }) {
+  const activeCount = scrapers.filter((s) => s.status === "active").length;
+  const total = scrapers.length;
+
   const statusColor: Record<string, string> = {
-    active: "bg-[var(--green)]",
-    creating: "bg-[var(--purple)]",
-    healing: "bg-[var(--orange)]",
-    failed: "bg-[var(--red)]",
-    regenerating: "bg-[var(--cyan)]",
+    active: "var(--green)",
+    creating: "var(--accent)",
+    healing: "var(--orange)",
+    failed: "var(--red)",
+    regenerating: "var(--cyan)",
   };
 
-  const activeCount = scrapers.filter((s) => s.status === "active").length;
-
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex items-center gap-1.5">
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", gap: 3 }}>
         {scrapers.map((s) => (
           <div
             key={s.collector_id}
             title={`${s.name} (${s.status})`}
-            className={`w-2.5 h-2.5 rounded-full ${statusColor[s.status] || "bg-[var(--dim)]"} ${
-              s.status === "healing" || s.status === "regenerating" ? "animate-pulse" : ""
-            }`}
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: statusColor[s.status] || "var(--dim)",
+              opacity: s.status === "active" ? 1 : 0.5,
+            }}
           />
         ))}
       </div>
-      <span className="text-[10px] text-[var(--dim)]">
-        {activeCount}/{scrapers.length} scrapers active
+      <span style={{ fontSize: 11, color: "var(--dim)" }}>
+        {total > 0 ? `${activeCount}/${total} scrapers` : "No scrapers"}
       </span>
     </div>
   );

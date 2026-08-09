@@ -15,54 +15,56 @@ interface ContradictionData {
 export default function Contradictions({ contradictions }: { contradictions: ContradictionData[] }) {
   if (contradictions.length === 0) {
     return (
-      <div className="p-4 text-center text-[var(--dim)] text-xs">
-        No contradictions detected. All sources agree.
+      <div style={{ padding: 24, textAlign: "center", color: "var(--dim)", fontSize: 12 }}>
+        No contradictions detected.
       </div>
     );
   }
 
   return (
-    <div className="p-2 space-y-2">
-      {contradictions.map((contra) => (
+    <div style={{ padding: 8 }}>
+      {contradictions.map((c) => (
         <div
-          key={contra.id}
-          className="bg-[var(--surface)] border-l-[3px] border-l-[var(--red)] border border-[var(--border)] rounded-r-xl p-3"
+          key={c.id}
+          style={{
+            padding: 12,
+            margin: "6px 0",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderLeft: "3px solid var(--red)",
+            borderRadius: "0 6px 6px 0",
+          }}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--red)]">
-              ⚡ Contradiction
-            </span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--cyan)" }}>{c.entity}</span>
             <span
-              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                contra.severity === "high"
-                  ? "bg-[var(--red)]/15 text-[var(--red)]"
-                  : "bg-[var(--orange)]/15 text-[var(--orange)]"
-              }`}
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: "1px 6px",
+                borderRadius: 3,
+                textTransform: "uppercase",
+                background: c.severity === "high" ? "rgba(239,68,68,0.1)" : "rgba(245,158,11,0.1)",
+                color: c.severity === "high" ? "var(--red)" : "var(--orange)",
+              }}
             >
-              {contra.severity}
+              {c.severity}
             </span>
           </div>
 
-          {/* Entity */}
-          <p className="text-xs font-semibold text-[var(--cyan)] mb-2">{contra.entity}</p>
-
-          {/* Facts */}
-          <div className="space-y-1.5">
-            <div className="bg-[var(--surface2)] rounded-lg p-2">
-              <p className="text-[10px] text-[var(--green)] font-semibold mb-0.5">Source A</p>
-              <p className="text-xs text-[var(--dim)]">{contra.fact_a}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ padding: 8, background: "var(--surface2)", borderRadius: 4 }}>
+              <div style={{ fontSize: 9, fontWeight: 600, color: "var(--green)", marginBottom: 2 }}>SOURCE A</div>
+              <div style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.4 }}>{c.fact_a}</div>
             </div>
-            <div className="text-center text-[var(--red)] text-xs font-bold">VS</div>
-            <div className="bg-[var(--surface2)] rounded-lg p-2">
-              <p className="text-[10px] text-[var(--orange)] font-semibold mb-0.5">Source B</p>
-              <p className="text-xs text-[var(--dim)]">{contra.fact_b}</p>
+            <div style={{ padding: 8, background: "var(--surface2)", borderRadius: 4 }}>
+              <div style={{ fontSize: 9, fontWeight: 600, color: "var(--orange)", marginBottom: 2 }}>SOURCE B</div>
+              <div style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.4 }}>{c.fact_b}</div>
             </div>
           </div>
 
-          {/* Analysis */}
-          {contra.analysis && (
-            <p className="text-[10px] text-[var(--dim)] mt-2 leading-relaxed">{contra.analysis}</p>
+          {c.analysis && (
+            <p style={{ fontSize: 10, color: "var(--dim)", marginTop: 8, lineHeight: 1.5 }}>{c.analysis}</p>
           )}
         </div>
       ))}

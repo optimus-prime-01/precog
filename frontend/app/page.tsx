@@ -1,94 +1,179 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import GraphExplorer from "@/components/GraphExplorer/GraphExplorer";
 import PredictionFeed from "@/components/PredictionFeed/PredictionFeed";
 import Contradictions from "@/components/Contradictions/Contradictions";
 import ScraperStatus from "@/components/ScraperStatus/ScraperStatus";
 import QueryBar from "@/components/QueryBar/QueryBar";
+import TopicInput from "@/components/TopicInput/TopicInput";
 
 export default function Dashboard() {
   const [graphData, setGraphData] = useState(null);
   const [predictions, setPredictions] = useState([]);
   const [contradictions, setContradictions] = useState([]);
   const [scrapers, setScrapers] = useState([]);
+  const [activeTab, setActiveTab] = useState<"predictions" | "contradictions">("predictions");
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const [graphRes, predRes, contraRes, scraperRes] = await Promise.all([
-        fetch("/api/graph"),
-        fetch("/api/predictions"),
-        fetch("/api/contradictions"),
-        fetch("/api/scrapers"),
+      const [graphRes, predRes, contraRes, scraperRes] = await Promise.allSettled([
+        fetch("/api/graph").then((r) => r.json()),
+        fetch("/api/predictions").then((r) => r.json()),
+        fetch("/api/contradictions").then((r) => r.json()),
+        fetch("/api/scrapers").then((r) => r.json()),
       ]);
-      setGraphData(await graphRes.json());
-      setPredictions((await predRes.json()).predictions || []);
-      setContradictions((await contraRes.json()).contradictions || []);
-      setScrapers((await scraperRes.json()).scrapers || []);
+      if (graphRes.status === "fulfilled") setGraphData(graphRes.value);
+      if (predRes.status === "fulfilled") setPredictions(predRes.value.predictions || []);
+      if (contraRes.status === "fulfilled") setContradictions(contraRes.value.contradictions || []);
+      if (scraperRes.status === "fulfilled") setScrapers(scraperRes.value.scrapers || []);
     } catch (e) {
       console.error("Fetch error:", e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30s
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]);
+
+  const entityCount = graphData?.entities?.length || 0;
+  const eventCount = graphData?.events?.length || 0;
+  const causalCount = graphData?.causal_edges?.length || 0;
 
   return (
-    <div className="h-screen flex flex-col">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold">
-            <span className="bg-gradient-to-r from-[var(--purple)] to-[var(--purple2)] bg-clip-text text-transparent">
-              PRECOG
+    <div className="h-screen flex flex-col overflow-hidden">
+      {/* Top Bar */}
+      <div
+        style={{
+          background: "var(--surface)",
+          borderBottom: "1px solid var(--border)",
+          padding: "10px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.5px" }}>PRECOG</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--dim)",
+                background: "var(--surface2)",
+                border: "1px solid var(--border)",
+                padding: "2px 8px",
+                borderRadius: 4,
+              }}
+            >
+              {entityCount} entities
             </span>
-          </h1>
-          <span className="text-xs text-[var(--dim)] border border-[var(--border)] px-2 py-0.5 rounded-full">
-            Predictive Causal Context Graph
-          </span>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--dim)",
+                background: "var(--surface2)",
+                border: "1px solid var(--border)",
+                padding: "2px 8px",
+                borderRadius: 4,
+              }}
+            >
+              {eventCount} events
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--dim)",
+                background: "var(--surface2)",
+                border: "1px solid var(--border)",
+                padding: "2px 8px",
+                borderRadius: 4,
+              }}
+            >
+              {causalCount} causal links
+            </span>
+          </div>
         </div>
-        <ScraperStatus scrapers={scrapers} />
-      </header>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <TopicInput onTopicAdded={fetchData} />
+          <ScraperStatus scrapers={scrapers} />
+        </div>
+      </div>
 
-      {/* Query Bar */}
+      {/* Query */}
       <QueryBar />
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Graph Explorer — Main Area */}
-        <div className="flex-1 relative">
+      {/* Main */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {/* Graph */}
+        <div style={{ flex: 1, position: "relative" }}>
           <GraphExplorer data={graphData} />
         </div>
 
-        {/* Right Sidebar */}
-        <div className="w-96 border-l border-[var(--border)] flex flex-col overflow-hidden">
-          {/* Predictions */}
-          <div className="flex-1 overflow-y-auto border-b border-[var(--border)]">
-            <div className="px-4 py-3 border-b border-[var(--border)] sticky top-0 bg-[var(--bg)] z-10">
-              <h2 className="text-sm font-semibold flex items-center gap-2">
-                <span>🔮</span> Predictions
-                <span className="text-xs text-[var(--green)] bg-[var(--green)]/10 px-2 py-0.5 rounded-full">
-                  {predictions.length}
-                </span>
-              </h2>
-            </div>
-            <PredictionFeed predictions={predictions} />
+        {/* Right Panel */}
+        <div
+          style={{
+            width: 360,
+            borderLeft: "1px solid var(--border)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            background: "var(--surface)",
+          }}
+        >
+          {/* Tabs */}
+          <div
+            style={{
+              display: "flex",
+              borderBottom: "1px solid var(--border)",
+              flexShrink: 0,
+            }}
+          >
+            <button
+              onClick={() => setActiveTab("predictions")}
+              style={{
+                flex: 1,
+                padding: "10px 0",
+                fontSize: 12,
+                fontWeight: 600,
+                border: "none",
+                cursor: "pointer",
+                background: activeTab === "predictions" ? "var(--surface2)" : "transparent",
+                color: activeTab === "predictions" ? "var(--text)" : "var(--dim)",
+                borderBottom: activeTab === "predictions" ? "2px solid var(--accent)" : "2px solid transparent",
+              }}
+            >
+              Predictions ({predictions.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("contradictions")}
+              style={{
+                flex: 1,
+                padding: "10px 0",
+                fontSize: 12,
+                fontWeight: 600,
+                border: "none",
+                cursor: "pointer",
+                background: activeTab === "contradictions" ? "var(--surface2)" : "transparent",
+                color: activeTab === "contradictions" ? "var(--text)" : "var(--dim)",
+                borderBottom: activeTab === "contradictions" ? "2px solid var(--red)" : "2px solid transparent",
+              }}
+            >
+              Contradictions ({contradictions.length})
+            </button>
           </div>
 
-          {/* Contradictions */}
-          <div className="h-64 overflow-y-auto">
-            <div className="px-4 py-3 border-b border-[var(--border)] sticky top-0 bg-[var(--bg)] z-10">
-              <h2 className="text-sm font-semibold flex items-center gap-2">
-                <span>⚠️</span> Contradictions
-                <span className="text-xs text-[var(--red)] bg-[var(--red)]/10 px-2 py-0.5 rounded-full">
-                  {contradictions.length}
-                </span>
-              </h2>
-            </div>
-            <Contradictions contradictions={contradictions} />
+          {/* Content */}
+          <div style={{ flex: 1, overflow: "auto" }}>
+            {activeTab === "predictions" ? (
+              <PredictionFeed predictions={predictions} />
+            ) : (
+              <Contradictions contradictions={contradictions} />
+            )}
           </div>
         </div>
       </div>

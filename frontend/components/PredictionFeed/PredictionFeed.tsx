@@ -21,75 +21,58 @@ export default function PredictionFeed({ predictions }: { predictions: Predictio
 
   if (predictions.length === 0) {
     return (
-      <div className="p-4 text-center text-[var(--dim)] text-xs">
-        No predictions yet. Waiting for enough signals to converge...
+      <div style={{ padding: 24, textAlign: "center", color: "var(--dim)", fontSize: 12 }}>
+        <p style={{ marginBottom: 4 }}>No predictions yet.</p>
+        <p style={{ fontSize: 11 }}>Waiting for enough convergent signals from multiple sources.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-2 space-y-2">
+    <div style={{ padding: 8 }}>
       {predictions.map((pred) => (
         <div
           key={pred.id}
-          className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 cursor-pointer hover:border-[var(--green)]/30 transition-colors"
           onClick={() => setExpanded(expanded === pred.id ? null : pred.id)}
+          style={{
+            padding: 12,
+            margin: "6px 0",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            cursor: "pointer",
+            transition: "border-color 0.15s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#3f3f46")}
+          onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--green)]">
-              {pred.type === "convergent" ? "📡 Convergent" : "🔗 Causal Chain"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 600, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              {pred.type === "convergent" ? "Convergent" : "Causal Chain"}
             </span>
             <span
-              className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                pred.confidence >= 0.7
-                  ? "bg-[var(--green)]/15 text-[var(--green)]"
-                  : "bg-[var(--orange)]/15 text-[var(--orange)]"
-              }`}
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "1px 6px",
+                borderRadius: 3,
+                background: pred.confidence >= 0.7 ? "rgba(34,197,94,0.1)" : "rgba(245,158,11,0.1)",
+                color: pred.confidence >= 0.7 ? "var(--green)" : "var(--orange)",
+              }}
             >
               {(pred.confidence * 100).toFixed(0)}%
             </span>
           </div>
-
-          {/* Prediction text */}
-          <p className="text-sm font-medium leading-snug">{pred.text}</p>
-
-          {/* Timeframe */}
+          <p style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.4, margin: 0 }}>{pred.text}</p>
           {pred.timeframe && (
-            <p className="text-[10px] text-[var(--dim)] mt-1">⏳ {pred.timeframe}</p>
+            <p style={{ fontSize: 10, color: "var(--dim)", marginTop: 4 }}>{pred.timeframe}</p>
           )}
-
-          {/* Expanded details */}
           {expanded === pred.id && (
-            <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-2">
-              {/* Reasoning */}
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--purple2)] mb-1">
-                  Reasoning
-                </p>
-                <p className="text-xs text-[var(--dim)] leading-relaxed">{pred.reasoning}</p>
-              </div>
-
-              {/* Watch for */}
-              {pred.watch_for && pred.watch_for.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--orange)] mb-1">
-                    Watch For
-                  </p>
-                  <ul className="space-y-1">
-                    {pred.watch_for.map((w, i) => (
-                      <li key={i} className="text-xs text-[var(--dim)]">
-                        👁 {w}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Signals count */}
-              <p className="text-[10px] text-[var(--dim)]">
-                Based on {pred.signals?.length || 0} signals | {pred.chain?.length || 0} chain events
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+              <p style={{ fontSize: 10, fontWeight: 600, color: "var(--dim)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Reasoning
               </p>
+              <p style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.5, margin: 0 }}>{pred.reasoning}</p>
             </div>
           )}
         </div>

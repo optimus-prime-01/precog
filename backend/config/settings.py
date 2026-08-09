@@ -3,6 +3,12 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     brightdata_api_key: str = ""
+
+    # AI Provider: "groq", "gemini", or "anthropic"
+    ai_provider: str = "groq"
+    groq_api_key: str = ""
+    grok_api_key: str = ""  # alias (user may set GROK instead of GROQ)
+    gemini_api_key: str = ""
     anthropic_api_key: str = ""
 
     neo4j_uri: str = "bolt://localhost:7687"
@@ -15,7 +21,8 @@ class Settings(BaseSettings):
     prediction_confidence_threshold: float = 0.6
 
     class Config:
-        env_file = ".env"
+        env_file = "../.env"
+        extra = "ignore"
 
 
 settings = Settings()
