@@ -8,6 +8,7 @@ import ScraperStatus from "@/components/ScraperStatus/ScraperStatus";
 import QueryBar from "@/components/QueryBar/QueryBar";
 import TopicInput from "@/components/TopicInput/TopicInput";
 import EntityDetail from "@/components/EntityDetail/EntityDetail";
+import SelfHealDemo from "@/components/SelfHealDemo/SelfHealDemo";
 
 export default function Dashboard() {
   const [graphData, setGraphData] = useState(null);
@@ -108,6 +109,7 @@ export default function Dashboard() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {lastUpdated && <span style={{ fontSize: 10, color: "#3f3f46" }}>Updated {lastUpdated}</span>}
+          <SelfHealDemo />
           <TopicInput onTopicAdded={fetchData} />
           <ScraperStatus scrapers={scrapers} />
         </div>
