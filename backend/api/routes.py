@@ -127,9 +127,9 @@ async def natural_language_query(request: Request):
     Answer a question using the graph.
     If graph has no relevant data, auto-scrape the topic, enrich the graph, then answer.
     """
-    import httpx
     from config.scraper_registry import ScraperEntry
     from graph.ingestion import ingest_scraped_data
+    from scrapers.multi_source import scrape_all_sources
 
     body = await request.json()
     question = body.get("question", "")
@@ -202,29 +202,9 @@ Return JSON: {"has_data": true/false, "search_query": "short search query to fin
         search_q = relevance.get("search_query", question)
         print(f"[Query] No data for '{question}'. Auto-scraping: '{search_q}'")
 
-        # Scrape HN + GitHub for the missing topic
-        new_stories = []
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            for q in [search_q, f"{search_q} 2026", f"{search_q} news"]:
-                try:
-                    resp = await client.get(
-                        "https://hn.algolia.com/api/v1/search",
-                        params={"query": q, "tags": "story", "hitsPerPage": 5},
-                    )
-                    for h in resp.json().get("hits", []):
-                        if h.get("title"):
-                            new_stories.append({
-                                "title": h["title"],
-                                "url": h.get("url", ""),
-                                "points": h.get("points", 0),
-                                "source": "HackerNews",
-                            })
-                except Exception:
-                    pass
-
-        # Dedup
-        seen = set()
-        unique = [s for s in new_stories if s["title"] not in seen and not seen.add(s["title"])]
+        # Scrape ALL sources for the missing topic
+        queries = [search_q, f"{search_q} 2026", f"{search_q} news"]
+        unique, _ = await scrape_all_sources(queries, use_brightdata=False)
 
         if unique:
             scraper = ScraperEntry(
@@ -297,133 +277,81 @@ async def clear_graph():
 @router.post("/add-topic")
 async def add_topic(request: Request):
     """
-    Add a new topic: scrape fast sources first (HN, GitHub), return immediately,
-    then Bright Data scrapers + LLM ingestion run in background.
+    Add a new topic using ALL available sources:
+    1. Bright Data Scraper Studio (DCA API) — real web scraping
+    2. HackerNews Algolia (popular + recent)
+    3. GitHub trending repos
+    Returns instantly, ingestion runs in background.
     """
     import asyncio
-    import httpx
     from config.scraper_registry import ScraperEntry
     from graph.ingestion import ingest_scraped_data
+    from scrapers.multi_source import scrape_all_sources
     from scrapers.brightdata import brightdata
-    from config.settings import settings
 
     body = await request.json()
     topic = body.get("topic", "").strip()
     if not topic:
         return {"error": "No topic provided"}
 
-    steps_log = []
-    all_stories = []
-
-    # Generate search queries from topic (simple split, no LLM needed)
+    # Generate search queries
     words = topic.split()
     search_queries = [
         topic,
         f"{topic} 2026",
         " ".join(words[:2]) if len(words) > 1 else f"{topic} news",
-        f"{words[0]} startup" if words else topic,
-        f"{topic} funding",
+        f"{words[0]} company" if words else topic,
+        f"{topic} latest",
     ]
 
-    # ─── Step 1: Fast scrape — HN + GitHub (instant, no blocking) ───
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        for q in search_queries[:4]:
-            try:
-                resp = await client.get(
-                    "https://hn.algolia.com/api/v1/search",
-                    params={"query": q, "tags": "story", "hitsPerPage": 5},
-                )
-                for h in resp.json().get("hits", []):
-                    if h.get("title"):
-                        all_stories.append({
-                            "title": h["title"],
-                            "url": h.get("url", ""),
-                            "points": h.get("points", 0),
-                            "source": "HackerNews",
-                        })
-            except Exception:
-                pass
-
-        for q in search_queries[:2]:
-            try:
-                resp = await client.get(
-                    "https://api.github.com/search/repositories",
-                    params={"q": q, "sort": "stars", "per_page": 3},
-                )
-                for r in resp.json().get("items", []):
-                    all_stories.append({
-                        "title": f'{r["full_name"]} - {(r.get("description") or "")[:100]}',
-                        "url": r["html_url"],
-                        "stars": r["stargazers_count"],
-                        "source": "GitHub",
-                    })
-            except Exception:
-                pass
-
-    steps_log.append(f"HN + GitHub: {len(all_stories)} items scraped")
-
-    # Deduplicate
-    seen = set()
-    unique = []
-    for s in all_stories:
-        t = s.get("title", "")
-        if t and t not in seen:
-            seen.add(t)
-            unique.append(s)
+    # Scrape ALL sources in parallel (Bright Data + HN + GitHub)
+    unique, logs = await scrape_all_sources(search_queries, use_brightdata=True)
 
     if not unique:
-        return {"status": "error", "message": "No data found for this topic", "steps": steps_log}
+        return {"status": "error", "message": "No data found for this topic", "steps": logs}
 
-    # Count sources before background work
+    # Count sources
     source_counts = {}
     for s in unique:
         src = s.get("source", "unknown")
         source_counts[src] = source_counts.get(src, 0) + 1
 
-    # ─── Step 2: ALL ingestion + Bright Data in background (return immediately) ───
+    # Background: LLM ingestion + new scraper creation
     async def background_work():
         scraper_entry = ScraperEntry(
             collector_id=f"c_topic_{topic[:20].replace(' ', '_')}",
             name=f"topic_{topic[:20].replace(' ', '_')}",
-            url="https://multiple-sources",
+            url="https://multi-source",
             description=f"Data about: {topic}",
             source_type="news",
         )
         try:
-            await ingest_scraped_data(unique[:10], scraper_entry)
-            print(f"  [BG] Ingested {min(len(unique), 10)} items for topic: {topic}")
+            await ingest_scraped_data(unique[:12], scraper_entry)
+            print(f"  [BG] Ingested {min(len(unique), 12)} items for: {topic}")
         except Exception as e:
             print(f"  [BG] Ingestion error: {str(e)[:80]}")
 
-        # Bright Data scrapers
-        bd_api_key = settings.brightdata_api_key
-        if bd_api_key and bd_api_key != "your_bright_data_api_key_here":
-            existing = registry.active()
-            for entry in existing[:2]:
-                try:
-                    results = await brightdata.run_scraper(entry.collector_id, [entry.url])
-                    if results:
-                        bd_stories = [{"title": item.get("title", ""), "url": item.get("url", ""), "source": f"BrightData_{entry.name}"} for item in results[:8] if item.get("title")]
-                        if bd_stories:
-                            await ingest_scraped_data(bd_stories, entry)
-                            print(f"  [BG] Bright Data '{entry.name}': {len(bd_stories)} items")
-                except Exception as e:
-                    print(f"  [BG] Bright Data error: {str(e)[:80]}")
-
-            try:
-                cid = await brightdata.create_scraper(
-                    f"https://news.google.com/search?q={topic.replace(' ', '+')}",
-                    f"extract news titles, dates about {topic[:50]}",
-                )
-                if cid:
-                    registry.register(ScraperEntry(collector_id=cid, name=f"bd_{topic[:15].replace(' ', '_')}", url=f"https://news.google.com/search?q={topic.replace(' ', '+')}", description=f"Scraper for {topic}", source_type="news"))
-                    print(f"  [BG] New Bright Data scraper: {cid}")
-            except Exception:
-                pass
+        # Create new Bright Data scraper for this topic (background, 5-15 min)
+        try:
+            cid = await brightdata.create_scraper(
+                f"https://news.google.com/search?q={topic.replace(' ', '+')}",
+                f"extract news article titles, dates, source names about {topic[:50]}",
+            )
+            if cid:
+                registry.register(ScraperEntry(
+                    collector_id=cid,
+                    name=f"bd_{topic[:15].replace(' ', '_')}",
+                    url=f"https://news.google.com/search?q={topic.replace(' ', '+')}",
+                    description=f"Bright Data scraper for {topic}",
+                    source_type="news",
+                ))
+                print(f"  [BG] New Bright Data scraper created: {cid}")
+        except Exception:
+            pass
 
     asyncio.create_task(background_work())
-    steps_log.append(f"Scraped {len(unique)} items. Ingestion + Bright Data running in background.")
-    steps_log.append("Graph will update in ~30-60 seconds. Refresh dashboard to see new entities.")
+    logs.append(f"Ingestion + Bright Data scraper creation running in background")
+    logs.append("Refresh dashboard in 30-60s to see new entities")
 
     return {
         "status": "ok",
@@ -431,5 +359,5 @@ async def add_topic(request: Request):
         "items_scraped": len(unique),
         "sources": source_counts,
         "queries_used": search_queries,
-        "steps": steps_log,
+        "steps": logs,
     }
