@@ -7,6 +7,7 @@ import Contradictions from "@/components/Contradictions/Contradictions";
 import ScraperStatus from "@/components/ScraperStatus/ScraperStatus";
 import QueryBar from "@/components/QueryBar/QueryBar";
 import TopicInput from "@/components/TopicInput/TopicInput";
+import EntityDetail from "@/components/EntityDetail/EntityDetail";
 
 export default function Dashboard() {
   const [graphData, setGraphData] = useState(null);
@@ -14,6 +15,7 @@ export default function Dashboard() {
   const [contradictions, setContradictions] = useState([]);
   const [scrapers, setScrapers] = useState([]);
   const [activeTab, setActiveTab] = useState<"predictions" | "contradictions">("predictions");
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -111,7 +113,7 @@ export default function Dashboard() {
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Graph */}
         <div style={{ flex: 1, position: "relative" }}>
-          <GraphExplorer data={graphData} />
+          <GraphExplorer data={graphData} onEntitySelect={setSelectedEntityId} />
         </div>
 
         {/* Right Panel */}
@@ -177,6 +179,9 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Entity Detail Panel — slides in from right on double-click */}
+      <EntityDetail entityId={selectedEntityId} onClose={() => setSelectedEntityId(null)} />
     </div>
   );
 }

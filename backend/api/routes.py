@@ -121,6 +121,67 @@ async def get_decision_trace(node_id: str):
     return {"traces": traces}
 
 
+@router.get("/entity/{entity_id}")
+async def get_entity_detail(entity_id: str):
+    """Return full detail for an entity — events, connections, sources, traces."""
+    async with neo4j_driver.session() as session:
+        # Entity info
+        ent = await session.run(
+            "MATCH (e:Entity {id: $id}) RETURN e.name AS name, e.type AS type, e.summary AS summary, toString(e.created_at) AS created_at, toString(e.updated_at) AS updated_at",
+            id=entity_id,
+        )
+        entity = await ent.single()
+        if not entity:
+            return {"error": "Entity not found"}
+
+        # Events this entity participates in
+        evt = await session.run(
+            """MATCH (e:Entity {id: $id})-[:PARTICIPATES_IN]->(evt:Event)
+               RETURN evt.title AS title, evt.source_scraper AS source,
+                      toString(evt.event_time) AS event_time, evt.confidence AS confidence
+               ORDER BY evt.event_time DESC LIMIT 20""",
+            id=entity_id,
+        )
+        events = [r.data() async for r in evt]
+
+        # Connected entities
+        conn = await session.run(
+            """MATCH (e:Entity {id: $id})-[:PARTICIPATES_IN]->(evt:Event)<-[:PARTICIPATES_IN]-(other:Entity)
+               WHERE other.id <> $id
+               RETURN other.name AS name, other.type AS type, count(evt) AS shared_events
+               ORDER BY shared_events DESC LIMIT 15""",
+            id=entity_id,
+        )
+        connections = [r.data() async for r in conn]
+
+        # Sources (which scrapers brought this entity)
+        src = await session.run(
+            """MATCH (e:Entity {id: $id})-[:MENTIONED_IN]->(ep:Episode)
+               RETURN ep.source AS source, ep.source_type AS type, count(ep) AS count
+               ORDER BY count DESC""",
+            id=entity_id,
+        )
+        sources = [r.data() async for r in src]
+
+        # Contradictions involving this entity
+        contra = await session.run(
+            """MATCH (c:Contradiction)
+               WHERE c.entity CONTAINS $name
+               RETURN c.fact_a AS fact_a, c.fact_b AS fact_b, c.analysis AS analysis, c.severity AS severity
+               LIMIT 5""",
+            name=entity.data()["name"],
+        )
+        contradictions = [r.data() async for r in contra]
+
+    return {
+        "entity": entity.data(),
+        "events": events,
+        "connections": connections,
+        "sources": sources,
+        "contradictions": contradictions,
+    }
+
+
 @router.post("/query")
 async def natural_language_query(request: Request):
     """

@@ -112,7 +112,7 @@ function buildGraph(data: GraphData, mode: ViewMode) {
   return { nodes, edges };
 }
 
-export default function GraphExplorer({ data }: { data: GraphData | null }) {
+export default function GraphExplorer({ data, onEntitySelect }: { data: GraphData | null; onEntitySelect?: (id: string) => void }) {
   const [mode, setMode] = useState<ViewMode>("entities");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -215,6 +215,11 @@ export default function GraphExplorer({ data }: { data: GraphData | null }) {
     setSelectedNode((prev) => (prev === node.id ? null : node.id));
   }, []);
 
+  const onNodeDoubleClick: NodeMouseHandler = useCallback((_event, node) => {
+    if (node.id.startsWith("label-") || node.id.startsWith("evt_")) return;
+    onEntitySelect?.(node.id);
+  }, [onEntitySelect]);
+
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
   }, []);
@@ -307,6 +312,7 @@ export default function GraphExplorer({ data }: { data: GraphData | null }) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={onPaneClick}
         fitView
         fitViewOptions={{ padding: 0.1 }}
