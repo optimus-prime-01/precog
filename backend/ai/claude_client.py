@@ -1,40 +1,71 @@
 """
-AI client — supports Groq (free), Google Gemini (free), and Anthropic Claude.
-Switches based on AI_PROVIDER env var. All expose the same interface.
+AI client with automatic key rotation.
+When one Groq key hits rate limit, switches to the next.
+Supports Groq, Gemini, and Anthropic.
 """
 
 import json
 from config.settings import settings
 
 
+# ─── Key Rotation for Groq ───
+
+class GroqRotator:
+    def __init__(self):
+        keys = []
+        # Collect all keys
+        if settings.groq_keys:
+            keys = [k.strip() for k in settings.groq_keys.split(",") if k.strip()]
+        if not keys:
+            single = settings.groq_api_key or settings.grok_api_key
+            if single:
+                keys = [single]
+        self.keys = keys
+        self.current = 0
+        self.clients = {}
+        print(f"[AI] Groq: {len(self.keys)} keys loaded for rotation")
+
+    def get_client(self):
+        from groq import AsyncGroq
+        key = self.keys[self.current]
+        if key not in self.clients:
+            self.clients[key] = AsyncGroq(api_key=key)
+        return self.clients[key]
+
+    def rotate(self):
+        old = self.current
+        self.current = (self.current + 1) % len(self.keys)
+        print(f"[AI] Groq: rotated key {old+1} → {self.current+1}/{len(self.keys)}")
+        return self.current != 0  # False if we've looped through all keys
+
+
 # ─── Provider Setup ───
 
-_provider = "groq"  # default
+_provider = "groq"
+_groq_rotator = None
+_anthropic_client = None
+_gemini_client = None
 
 if settings.ai_provider == "anthropic" and settings.anthropic_api_key and settings.anthropic_api_key != "your_anthropic_api_key_here":
     import anthropic
     _anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     _provider = "anthropic"
     print("[AI] Using Anthropic Claude")
-
 elif settings.ai_provider == "gemini" and settings.gemini_api_key and settings.gemini_api_key != "your_gemini_api_key_here":
     from google import genai
     _gemini_client = genai.Client(api_key=settings.gemini_api_key)
     _provider = "gemini"
     print("[AI] Using Google Gemini")
-
 else:
-    from groq import Groq, AsyncGroq
-    _groq_key = settings.groq_api_key or settings.grok_api_key
-    _groq_client = AsyncGroq(api_key=_groq_key)
+    _groq_rotator = GroqRotator()
     _provider = "groq"
-    print("[AI] Using Groq (Llama 3)")
+    print("[AI] Using Groq with key rotation")
 
 
 # ─── Unified Interface ───
 
 async def ask_claude(system_prompt: str, user_prompt: str, max_tokens: int = 4096) -> str:
-    """Send a prompt and return the text response. Works with all providers."""
+    """Send a prompt and return text. Auto-rotates Groq keys on 429."""
     if _provider == "anthropic":
         response = await _anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -52,27 +83,41 @@ async def ask_claude(system_prompt: str, user_prompt: str, max_tokens: int = 409
         )
         return response.text
 
-    else:  # groq
-        response = await _groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        return response.choices[0].message.content
+    else:  # groq with rotation
+        last_error = None
+        attempts = len(_groq_rotator.keys)
+        for _ in range(attempts):
+            try:
+                client = _groq_rotator.get_client()
+                response = await client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                if "429" in error_str or "rate_limit" in error_str:
+                    has_more = _groq_rotator.rotate()
+                    if not has_more:
+                        raise Exception(f"All {attempts} Groq keys exhausted: {error_str[:100]}")
+                else:
+                    raise
+        raise last_error
 
 
 async def ask_claude_json(system_prompt: str, user_prompt: str, max_tokens: int = 4096) -> dict:
-    """Send a prompt and parse JSON response. Works with all providers."""
+    """Send a prompt and parse JSON response. Auto-rotates keys."""
     response = await ask_claude(
         system_prompt + "\n\nRespond ONLY with valid JSON. No markdown, no explanation, no code fences.",
         user_prompt,
         max_tokens,
     )
 
-    # Strip markdown code fences if present
     text = response.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1]

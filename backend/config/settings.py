@@ -6,8 +6,9 @@ class Settings(BaseSettings):
 
     # AI Provider: "groq", "gemini", or "anthropic"
     ai_provider: str = "groq"
+    groq_keys: str = ""  # comma-separated list for rotation
     groq_api_key: str = ""
-    grok_api_key: str = ""  # alias (user may set GROK instead of GROQ)
+    grok_api_key: str = ""  # alias
     gemini_api_key: str = ""
     anthropic_api_key: str = ""
 
