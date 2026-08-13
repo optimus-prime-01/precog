@@ -132,6 +132,7 @@ async def scrape_brightdata_hn(limit: int = 30) -> list[dict]:
 async def scrape_all_sources(queries: list[str], use_brightdata: bool = True) -> tuple[list[dict], list[str]]:
     """
     Scrape from ALL available sources in parallel.
+    Bright Data runs with a timeout so it doesn't block fast sources.
     Returns (stories, logs).
     """
     all_stories = []
@@ -139,9 +140,14 @@ async def scrape_all_sources(queries: list[str], use_brightdata: bool = True) ->
 
     tasks = []
 
-    # 1. Bright Data Scraper Studio (real scraping)
+    # 1. Bright Data Scraper Studio (with 15s timeout — don't block)
     if use_brightdata:
-        tasks.append(("BrightData_HN", scrape_brightdata_hn(30)))
+        async def bd_with_timeout():
+            try:
+                return await asyncio.wait_for(scrape_brightdata_hn(30), timeout=15)
+            except asyncio.TimeoutError:
+                return []
+        tasks.append(("BrightData_HN", bd_with_timeout()))
 
     # 2. HN Algolia — multiple queries
     for q in queries[:4]:
