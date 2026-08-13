@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [scrapers, setScrapers] = useState([]);
   const [activeTab, setActiveTab] = useState<"predictions" | "contradictions">("predictions");
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -29,6 +30,7 @@ export default function Dashboard() {
       if (predRes.status === "fulfilled") setPredictions(predRes.value.predictions || []);
       if (contraRes.status === "fulfilled") setContradictions(contraRes.value.contradictions || []);
       if (scraperRes.status === "fulfilled") setScrapers(scraperRes.value.scrapers || []);
+      setLastUpdated(new Date().toLocaleTimeString());
     } catch (e) {
       console.error("Fetch error:", e);
     }
@@ -36,7 +38,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(fetchData, 15000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -60,7 +62,11 @@ export default function Dashboard() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.5px" }}>PRECOG</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", animation: "pulse 2s infinite" }} />
+            <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.5px" }}>PRECOG</span>
+          </div>
+          <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
           <div style={{ display: "flex", gap: 8 }}>
             <span
               style={{
@@ -101,6 +107,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {lastUpdated && <span style={{ fontSize: 10, color: "#3f3f46" }}>Updated {lastUpdated}</span>}
           <TopicInput onTopicAdded={fetchData} />
           <ScraperStatus scrapers={scrapers} />
         </div>

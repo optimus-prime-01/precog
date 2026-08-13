@@ -15,9 +15,13 @@ router = APIRouter()
 async def get_graph():
     """Return all entities, events, and edges for the graph explorer."""
     async with neo4j_driver.session() as session:
-        # Entities
+        # Entities with source info
         ent_result = await session.run(
-            "MATCH (e:Entity) RETURN e.id AS id, e.name AS name, e.type AS type LIMIT 200"
+            """MATCH (e:Entity)
+               OPTIONAL MATCH (e)-[:MENTIONED_IN]->(ep:Episode)
+               WITH e, collect(DISTINCT ep.source) AS sources
+               RETURN e.id AS id, e.name AS name, e.type AS type, sources
+               LIMIT 200"""
         )
         entities = [record.data() async for record in ent_result]
 

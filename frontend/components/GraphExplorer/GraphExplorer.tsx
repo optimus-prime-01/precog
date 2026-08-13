@@ -15,7 +15,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 interface GraphData {
-  entities: { id: string; name: string; type: string }[];
+  entities: { id: string; name: string; type: string; sources?: string[] }[];
   events: { id: string; title: string; event_time: string; confidence: number; source: string }[];
   entity_edges: { source: string; target: string; type: string }[];
   bipartite_edges: { source: string; target: string }[];
@@ -61,12 +61,25 @@ function buildGraph(data: GraphData, mode: ViewMode) {
       globalY += 28;
       const cols = Math.min(8, Math.max(4, Math.ceil(Math.sqrt(ents.length))));
       ents.forEach((ent, i) => {
+        // Source indicator: dot colors based on data sources
+        const srcIndicator = (ent.sources || []).some((s: string) => s?.includes("BrightData")) ? " \u25CF" : "";
         nodes.push({
           id: ent.id,
           position: { x: 20 + (i % cols) * 180, y: globalY + Math.floor(i / cols) * 60 },
-          data: { label: ent.name },
+          data: { label: `${ent.name}${srcIndicator}` },
           draggable: true,
-          style: { background: "#131316", border: `1.5px solid ${color}`, color: "#d4d4d8", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "grab", transition: "all 0.2s" },
+          style: {
+            background: "#131316",
+            border: `1.5px solid ${color}`,
+            color: "#d4d4d8",
+            borderRadius: 6,
+            padding: "6px 14px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "grab",
+            transition: "all 0.2s",
+            boxShadow: (ent.sources || []).length > 2 ? `0 0 8px ${color}30` : "none",
+          },
         });
       });
       globalY += Math.ceil(ents.length / cols) * 60 + 30;
