@@ -110,6 +110,50 @@ async def scrape_github(query: str, limit: int = 3) -> list[dict]:
         return []
 
 
+async def scrape_wikipedia(query: str, limit: int = 5) -> list[dict]:
+    """Search Wikipedia for any topic — works universally."""
+    try:
+        import re
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://en.wikipedia.org/w/api.php", params={
+                "action": "query", "list": "search", "srsearch": query,
+                "format": "json", "srlimit": limit,
+            }, headers={"User-Agent": "PRECOG/1.0"})
+            results = resp.json().get("query", {}).get("search", [])
+            return [
+                {
+                    "title": r["title"],
+                    "summary": re.sub(r"<[^>]+>", "", r.get("snippet", "")),
+                    "source": "Wikipedia",
+                    "url": f"https://en.wikipedia.org/wiki/{r['title'].replace(' ', '_')}",
+                }
+                for r in results
+            ]
+    except Exception:
+        return []
+
+
+async def scrape_brave_search(query: str, limit: int = 5) -> list[dict]:
+    """Search Brave Search (no API key needed for basic web search)."""
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(
+                "https://search.brave.com/api/suggest",
+                params={"q": query, "rich": "true"},
+                headers={"Accept": "application/json"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                results = data if isinstance(data, list) else data.get("results", [])
+                return [
+                    {"title": str(r), "source": "BraveSearch"}
+                    for r in results[:limit] if r
+                ]
+    except Exception:
+        pass
+    return []
+
+
 async def scrape_brightdata_hn(limit: int = 30) -> list[dict]:
     """Scrape HackerNews via Bright Data Scraper Studio."""
     collector = BD_SCRAPERS.get("hackernews")
@@ -160,6 +204,13 @@ async def scrape_all_sources(queries: list[str], use_brightdata: bool = True) ->
     # 4. GitHub
     for q in queries[:3]:
         tasks.append((f"GitHub:{q}", scrape_github(q, 4)))
+
+    # 5. Wikipedia (works for ANY topic — politics, geography, history, etc.)
+    for q in queries[:3]:
+        tasks.append((f"Wikipedia:{q}", scrape_wikipedia(q, 5)))
+
+    # 6. Brave Search suggestions
+    tasks.append((f"Brave:{queries[0]}", scrape_brave_search(queries[0], 5)))
 
     # Run all in parallel
     results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
