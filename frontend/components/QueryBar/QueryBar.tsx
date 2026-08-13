@@ -16,6 +16,7 @@ function formatResponse(text: string) {
 export default function QueryBar() {
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState("");
+  const [enriched, setEnriched] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showAnswer, setShowAnswer] = useState(true);
 
@@ -25,6 +26,7 @@ export default function QueryBar() {
 
     setLoading(true);
     setAnswer("");
+    setEnriched(null);
     setShowAnswer(true);
 
     try {
@@ -35,6 +37,9 @@ export default function QueryBar() {
       });
       const data = await res.json();
       setAnswer(data.answer || data.error || "No response.");
+      if (data.enriched) {
+        setEnriched(data.enriched_message || "Graph auto-enriched with new data");
+      }
     } catch {
       setAnswer("Backend unreachable. Make sure the server is running on port 8000.");
     } finally {
@@ -76,7 +81,7 @@ export default function QueryBar() {
             cursor: loading ? "wait" : "pointer",
           }}
         >
-          {loading ? "Querying..." : "Ask"}
+          {loading ? "Searching..." : "Ask"}
         </button>
       </form>
 
@@ -108,6 +113,14 @@ export default function QueryBar() {
             >
               &times;
             </button>
+            {enriched && (
+              <div style={{
+                fontSize: 11, color: "#22c55e", marginBottom: 10, padding: "6px 10px",
+                background: "rgba(34,197,94,0.08)", borderRadius: 4, border: "1px solid rgba(34,197,94,0.15)",
+              }}>
+                Graph enriched: {enriched}. Data added to graph automatically.
+              </div>
+            )}
             <pre
               style={{
                 fontSize: 12,

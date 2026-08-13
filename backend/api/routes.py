@@ -5,7 +5,7 @@ API Routes — serves graph data, predictions, contradictions, and NL queries to
 from fastapi import APIRouter, Request
 
 from graph.connection import neo4j_driver
-from ai.claude_client import ask_claude
+from ai.claude_client import ask_claude, ask_claude_json
 from config.scraper_registry import registry
 
 router = APIRouter()
@@ -123,76 +123,142 @@ async def get_decision_trace(node_id: str):
 
 @router.post("/query")
 async def natural_language_query(request: Request):
-    """Answer a natural language question by querying the graph."""
+    """
+    Answer a question using the graph.
+    If graph has no relevant data, auto-scrape the topic, enrich the graph, then answer.
+    """
+    import httpx
+    from config.scraper_registry import ScraperEntry
+    from graph.ingestion import ingest_scraped_data
+
     body = await request.json()
     question = body.get("question", "")
 
     if not question:
         return {"error": "No question provided"}
 
-    # Get graph data — targeted queries for better context
-    async with neo4j_driver.session() as session:
-        # Top connected entities
-        ent_result = await session.run(
-            """MATCH (e:Entity)-[r]-()
-               RETURN e.name AS name, e.type AS type, count(r) AS connections
-               ORDER BY connections DESC LIMIT 30"""
-        )
-        entities = [record.data() async for record in ent_result]
+    async def get_graph_context():
+        async with neo4j_driver.session() as session:
+            ent_result = await session.run(
+                """MATCH (e:Entity)-[r]-()
+                   RETURN e.name AS name, e.type AS type, count(r) AS connections
+                   ORDER BY connections DESC LIMIT 30"""
+            )
+            entities = [record.data() async for record in ent_result]
 
-        # Recent events with entity context
-        evt_result = await session.run(
-            """MATCH (e:Event)
-               OPTIONAL MATCH (ent:Entity)-[:PARTICIPATES_IN]->(e)
-               WITH e, collect(ent.name) AS involved_entities
-               RETURN e.title AS title, e.source_scraper AS source,
-                      toString(e.event_time) AS time, e.confidence AS confidence,
-                      involved_entities
-               ORDER BY e.event_time DESC LIMIT 25"""
-        )
-        events = [record.data() async for record in evt_result]
+            evt_result = await session.run(
+                """MATCH (e:Event)
+                   OPTIONAL MATCH (ent:Entity)-[:PARTICIPATES_IN]->(e)
+                   WITH e, collect(ent.name) AS involved_entities
+                   RETURN e.title AS title, e.source_scraper AS source,
+                          toString(e.event_time) AS time, e.confidence AS confidence,
+                          involved_entities
+                   ORDER BY e.event_time DESC LIMIT 25"""
+            )
+            events = [record.data() async for record in evt_result]
 
-        # Full causal chains (multi-hop)
-        chain_result = await session.run(
-            """MATCH path = (a:Event)-[:CAUSES*1..3]->(b:Event)
-               RETURN [n IN nodes(path) | n.title] AS chain,
-                      [r IN relationships(path) | r.confidence] AS confidences
-               LIMIT 10"""
-        )
-        chains = [record.data() async for record in chain_result]
+            chain_result = await session.run(
+                """MATCH path = (a:Event)-[:CAUSES*1..3]->(b:Event)
+                   RETURN [n IN nodes(path) | n.title] AS chain,
+                          [r IN relationships(path) | r.confidence] AS confidences
+                   LIMIT 10"""
+            )
+            chains = [record.data() async for record in chain_result]
 
-        # Contradictions with full analysis
-        contra_result = await session.run(
-            """MATCH (c:Contradiction) WHERE c.status = 'active'
-               RETURN c.entity AS entity, c.fact_a AS fact_a, c.fact_b AS fact_b,
-                      c.analysis AS analysis, c.severity AS severity
-               LIMIT 10"""
-        )
-        contradictions = [record.data() async for record in contra_result]
+            contra_result = await session.run(
+                """MATCH (c:Contradiction) WHERE c.status = 'active'
+                   RETURN c.entity AS entity, c.fact_a AS fact_a, c.fact_b AS fact_b,
+                          c.analysis AS analysis, c.severity AS severity
+                   LIMIT 10"""
+            )
+            contradictions = [record.data() async for record in contra_result]
 
-        # Entity relationships
-        rel_result = await session.run(
-            """MATCH (a:Entity)-[r]->(b:Entity)
-               RETURN a.name AS source_name, type(r) AS relationship, b.name AS target_name
-               LIMIT 30"""
-        )
-        relationships = [record.data() async for record in rel_result]
+            rel_result = await session.run(
+                """MATCH (a:Entity)-[r]->(b:Entity)
+                   RETURN a.name AS source_name, type(r) AS relationship, b.name AS target_name
+                   LIMIT 30"""
+            )
+            relationships = [record.data() async for record in rel_result]
 
+        return entities, events, chains, contradictions, relationships
+
+    # Step 1: Check if graph has relevant data
+    entities, events, chains, contradictions, relationships = await get_graph_context()
+
+    # Ask LLM: does the graph have data about this question?
+    try:
+        relevance = await ask_claude_json(
+            """Check if the graph data contains relevant information to answer the question.
+Return JSON: {"has_data": true/false, "search_query": "short search query to find missing data"}""",
+            f"Question: {question}\nEntities in graph: {[e['name'] for e in entities[:20]]}",
+        )
+    except Exception:
+        relevance = {"has_data": True, "search_query": question}
+
+    enriched = False
+
+    # Step 2: If no relevant data, auto-scrape and enrich
+    if not relevance.get("has_data", True):
+        search_q = relevance.get("search_query", question)
+        print(f"[Query] No data for '{question}'. Auto-scraping: '{search_q}'")
+
+        # Scrape HN + GitHub for the missing topic
+        new_stories = []
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            for q in [search_q, f"{search_q} 2026", f"{search_q} news"]:
+                try:
+                    resp = await client.get(
+                        "https://hn.algolia.com/api/v1/search",
+                        params={"query": q, "tags": "story", "hitsPerPage": 5},
+                    )
+                    for h in resp.json().get("hits", []):
+                        if h.get("title"):
+                            new_stories.append({
+                                "title": h["title"],
+                                "url": h.get("url", ""),
+                                "points": h.get("points", 0),
+                                "source": "HackerNews",
+                            })
+                except Exception:
+                    pass
+
+        # Dedup
+        seen = set()
+        unique = [s for s in new_stories if s["title"] not in seen and not seen.add(s["title"])]
+
+        if unique:
+            scraper = ScraperEntry(
+                collector_id=f"c_query_{search_q[:15].replace(' ', '_')}",
+                name=f"query_enrichment",
+                url="https://auto-enrichment",
+                description=f"Auto-scraped for query: {question[:50]}",
+                source_type="news",
+            )
+            try:
+                await ingest_scraped_data(unique[:8], scraper)
+                enriched = True
+                print(f"[Query] Enriched graph with {min(len(unique), 8)} items")
+            except Exception as e:
+                print(f"[Query] Enrichment failed: {str(e)[:80]}")
+
+            # Re-fetch graph context with new data
+            entities, events, chains, contradictions, relationships = await get_graph_context()
+
+    # Step 3: Answer with (enriched) graph context
     system = """You are PRECOG, a causal web intelligence engine. You answer questions by reasoning over a live knowledge graph built from scraped web data.
 
 Your reasoning process:
 1. DIRECT ANSWER: Answer the question directly in 1-2 sentences.
 2. GRAPH EVIDENCE: Cite specific events, causal chains, and entity relationships from the data. Include source and confidence.
-3. CONTRADICTIONS: If any active contradictions are relevant, mention them — they show uncertainty.
-4. CAUSAL REASONING: Trace cause-effect chains. If A caused B, and B involves entity X, then a change to A affects X.
-5. SECOND-ORDER EFFECTS: What downstream consequences follow? Think 2 steps ahead using entity relationships.
+3. CONTRADICTIONS: If any active contradictions are relevant, mention them.
+4. CAUSAL REASONING: Trace cause-effect chains.
+5. SECOND-ORDER EFFECTS: What downstream consequences follow?
 
 Rules:
 - No markdown. Plain text only. No ** or ## or *.
 - Use line breaks between sections for readability.
 - Cite sources like: (Source: scraper_name, confidence: 0.8)
-- Be specific. Name entities, events, and relationships.
-- If you find contradictions relevant to the question, highlight them as "ACTIVE CONTRADICTION:" on its own line."""
+- Be specific. Name entities, events, and relationships."""
 
     user = f"""Question: {question}
 
@@ -208,10 +274,16 @@ Causal chains (proven): {chains}
 
 Active contradictions: {contradictions}
 
-Reason over this data to answer the question. Trace causal chains and entity relationships."""
+Reason over this data to answer the question."""
 
     answer = await ask_claude(system, user)
-    return {"question": question, "answer": answer}
+
+    return {
+        "question": question,
+        "answer": answer,
+        "enriched": enriched,
+        "enriched_message": f"Graph auto-enriched with new data about '{relevance.get('search_query', '')}'" if enriched else None,
+    }
 
 
 @router.post("/clear-graph")
