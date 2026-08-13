@@ -115,6 +115,17 @@ function buildGraph(data: GraphData, mode: ViewMode) {
 export default function GraphExplorer({ data }: { data: GraphData | null }) {
   const [mode, setMode] = useState<ViewMode>("entities");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  // Search matching node IDs
+  const searchMatchIds = useMemo(() => {
+    if (!search.trim() || !data) return new Set<string>();
+    const q = search.toLowerCase();
+    const ids = new Set<string>();
+    data.entities.forEach((e) => { if (e.name.toLowerCase().includes(q)) ids.add(e.id); });
+    data.events.forEach((e) => { if (e.title.toLowerCase().includes(q)) ids.add(e.id); });
+    return ids;
+  }, [search, data]);
 
   const built = useMemo(() => {
     if (!data) return { nodes: [], edges: [] };
@@ -144,22 +155,44 @@ export default function GraphExplorer({ data }: { data: GraphData | null }) {
     return ids;
   }, [selectedNode, built.edges]);
 
-  // Apply highlight styles
+  // Apply highlight styles (search OR click selection)
+  const isHighlighting = !!selectedNode || searchMatchIds.size > 0;
+
   const styledNodes = useMemo(() => {
-    if (!selectedNode) return built.nodes;
+    if (!isHighlighting) return built.nodes;
+
     return built.nodes.map((node) => {
+      if (node.id.startsWith("label-")) return node;
+
+      // Search highlight
+      if (searchMatchIds.size > 0) {
+        if (searchMatchIds.has(node.id)) {
+          return { ...node, style: { ...node.style, border: "2px solid #22c55e", boxShadow: "0 0 16px rgba(34,197,94,0.4)", opacity: 1 } };
+        }
+        return { ...node, style: { ...node.style, opacity: 0.12 } };
+      }
+
+      // Click highlight
       if (node.id === selectedNode) {
         return { ...node, style: { ...node.style, border: "2px solid #ffffff", boxShadow: "0 0 20px rgba(139,92,246,0.5)", zIndex: 10, opacity: 1 } };
       }
       if (connectedIds.has(node.id)) {
         return { ...node, style: { ...node.style, border: "2px solid #a78bfa", boxShadow: "0 0 12px rgba(139,92,246,0.3)", opacity: 1 } };
       }
-      if (node.id.startsWith("label-")) return node;
       return { ...node, style: { ...node.style, opacity: 0.15 } };
     });
-  }, [built.nodes, selectedNode, connectedIds]);
+  }, [built.nodes, selectedNode, connectedIds, searchMatchIds, isHighlighting]);
 
   const styledEdges = useMemo(() => {
+    if (searchMatchIds.size > 0) {
+      // Highlight edges connected to search matches
+      return built.edges.map((edge) => {
+        if (searchMatchIds.has(edge.source) || searchMatchIds.has(edge.target)) {
+          return { ...edge, style: { ...edge.style, stroke: "#22c55e", strokeWidth: 2, opacity: 1 }, animated: true };
+        }
+        return { ...edge, style: { ...edge.style, opacity: 0.05 } };
+      });
+    }
     if (!selectedNode) return built.edges;
     return built.edges.map((edge) => {
       if (connectedEdgeIds.has(edge.id)) {
@@ -167,7 +200,7 @@ export default function GraphExplorer({ data }: { data: GraphData | null }) {
       }
       return { ...edge, style: { ...edge.style, opacity: 0.05 } };
     });
-  }, [built.edges, selectedNode, connectedEdgeIds]);
+  }, [built.edges, selectedNode, connectedEdgeIds, searchMatchIds]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(styledNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(styledEdges);
@@ -196,40 +229,77 @@ export default function GraphExplorer({ data }: { data: GraphData | null }) {
 
   return (
     <div style={{ height: "100%", position: "relative" }}>
-      <div
-        style={{
-          position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 10,
-          display: "flex", gap: 1, background: "#18181b", borderRadius: 6, border: "1px solid #27272a", overflow: "hidden",
-        }}
-      >
-        {(["entities", "events", "all"] as ViewMode[]).map((m) => (
-          <button
-            key={m}
-            onClick={() => { setMode(m); setSelectedNode(null); }}
+      {/* Top bar: search + view toggle */}
+      <div style={{
+        position: "absolute", top: 12, left: 12, right: 12, zIndex: 10,
+        display: "flex", alignItems: "center", gap: 8,
+      }}>
+        {/* Search */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6,
+          background: "#18181b", border: `1px solid ${search ? "#22c55e" : "#27272a"}`,
+          borderRadius: 6, padding: "4px 10px", minWidth: 180,
+          transition: "border-color 0.2s",
+        }}>
+          <span style={{ fontSize: 12, color: "#52525b" }}>&#x1F50D;</span>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setSelectedNode(null); }}
+            placeholder="Search nodes..."
             style={{
-              padding: "5px 14px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer",
-              background: mode === m ? "#27272a" : "transparent", color: mode === m ? "#fafafa" : "#52525b", textTransform: "capitalize",
+              background: "transparent", border: "none", outline: "none",
+              color: "#fafafa", fontSize: 11, width: 120,
             }}
-          >
-            {m} {m === "entities" ? `(${data.entities.length})` : m === "events" ? `(${data.events.length})` : ""}
-          </button>
-        ))}
-      </div>
-
-      {selectedNode && (
-        <div
-          style={{
-            position: "absolute", top: 12, right: 12, zIndex: 10,
-            background: "#18181b", border: "1px solid #27272a", borderRadius: 6, padding: "6px 12px",
-            fontSize: 11, color: "#a1a1aa",
-          }}
-        >
-          {connectedIds.size} connected nodes &middot;{" "}
-          <button onClick={() => setSelectedNode(null)} style={{ background: "none", border: "none", color: "#8b5cf6", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
-            Clear
-          </button>
+          />
+          {search && (
+            <>
+              <span style={{ fontSize: 10, color: "#22c55e" }}>{searchMatchIds.size}</span>
+              <button
+                onClick={() => setSearch("")}
+                style={{ background: "none", border: "none", color: "#52525b", cursor: "pointer", fontSize: 12, padding: 0 }}
+              >&times;</button>
+            </>
+          )}
         </div>
-      )}
+
+        {/* View toggle */}
+        <div style={{
+          display: "flex", gap: 1, background: "#18181b", borderRadius: 6,
+          border: "1px solid #27272a", overflow: "hidden",
+        }}>
+          {(["entities", "events", "all"] as ViewMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); setSelectedNode(null); setSearch(""); }}
+              style={{
+                padding: "5px 12px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer",
+                background: mode === m ? "#27272a" : "transparent",
+                color: mode === m ? "#fafafa" : "#52525b", textTransform: "capitalize",
+              }}
+            >
+              {m} {m === "entities" ? `(${data.entities.length})` : m === "events" ? `(${data.events.length})` : ""}
+            </button>
+          ))}
+        </div>
+
+        {/* Selection info */}
+        {(selectedNode || searchMatchIds.size > 0) && (
+          <div style={{
+            background: "#18181b", border: "1px solid #27272a", borderRadius: 6,
+            padding: "4px 10px", fontSize: 11, color: "#a1a1aa", marginLeft: "auto",
+          }}>
+            {selectedNode ? `${connectedIds.size} connected` : `${searchMatchIds.size} found`}
+            {" "}&middot;{" "}
+            <button
+              onClick={() => { setSelectedNode(null); setSearch(""); }}
+              style={{ background: "none", border: "none", color: "#8b5cf6", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
 
       <ReactFlow
         nodes={nodes}
