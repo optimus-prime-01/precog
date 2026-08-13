@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
+import GraphStats from "@/components/GraphStats/GraphStats";
 import {
   ReactFlow,
   Background,
@@ -125,7 +126,7 @@ function buildGraph(data: GraphData, mode: ViewMode) {
   return { nodes, edges };
 }
 
-export default function GraphExplorer({ data, onEntitySelect }: { data: GraphData | null; onEntitySelect?: (id: string) => void }) {
+export default function GraphExplorer({ data, onEntitySelect, predictionCount = 0, contradictionCount = 0 }: { data: GraphData | null; onEntitySelect?: (id: string) => void; predictionCount?: number; contradictionCount?: number }) {
   const [mode, setMode] = useState<ViewMode>("entities");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -337,9 +338,17 @@ export default function GraphExplorer({ data, onEntitySelect }: { data: GraphDat
         selectNodesOnDrag={false}
       >
         <Background color="#141418" gap={30} size={1} />
-        <Controls position="bottom-left" />
+        <Controls position="top-right" />
         <MiniMap nodeColor={() => "#3f3f46"} maskColor="rgba(0,0,0,0.85)" position="bottom-right" style={{ width: 140, height: 90 }} pannable zoomable />
       </ReactFlow>
+
+      <GraphStats
+        entities={data.entities.length}
+        events={data.events.length}
+        causalLinks={data.causal_edges.length}
+        predictions={predictionCount}
+        contradictions={contradictionCount}
+      />
     </div>
   );
 }

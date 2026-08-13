@@ -120,7 +120,7 @@ export default function Dashboard() {
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Graph */}
         <div style={{ flex: 1, position: "relative" }}>
-          <GraphExplorer data={graphData} onEntitySelect={setSelectedEntityId} />
+          <GraphExplorer data={graphData} onEntitySelect={setSelectedEntityId} predictionCount={predictions.length} contradictionCount={contradictions.length} />
         </div>
 
         {/* Right Panel */}
