@@ -302,6 +302,9 @@ async def add_topic(request: Request):
         " ".join(words[:2]) if len(words) > 1 else f"{topic} news",
         f"{words[0]} company" if words else topic,
         f"{topic} latest",
+        f"{topic} impact",
+        f"{topic} competition",
+        f"{topic} future",
     ]
 
     # Scrape ALL sources in parallel (Bright Data + HN + GitHub)
@@ -318,6 +321,8 @@ async def add_topic(request: Request):
 
     # Background: LLM ingestion + new scraper creation
     async def background_work():
+        from ai.prediction_engine import PredictionEngine
+
         scraper_entry = ScraperEntry(
             collector_id=f"c_topic_{topic[:20].replace(' ', '_')}",
             name=f"topic_{topic[:20].replace(' ', '_')}",
@@ -326,10 +331,18 @@ async def add_topic(request: Request):
             source_type="news",
         )
         try:
-            await ingest_scraped_data(unique[:12], scraper_entry)
-            print(f"  [BG] Ingested {min(len(unique), 12)} items for: {topic}")
+            await ingest_scraped_data(unique[:30], scraper_entry)
+            print(f"  [BG] Ingested {min(len(unique), 30)} items for: {topic}")
         except Exception as e:
             print(f"  [BG] Ingestion error: {str(e)[:80]}")
+
+        # Run prediction engine after ingestion
+        try:
+            engine = PredictionEngine()
+            await engine.detect_all_predictions()
+            print("  [BG] Predictions generated")
+        except Exception as e:
+            print(f"  [BG] Prediction error: {str(e)[:80]}")
 
         # Create new Bright Data scraper for this topic (background, 5-15 min)
         try:

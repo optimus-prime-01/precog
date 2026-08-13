@@ -149,17 +149,17 @@ async def scrape_all_sources(queries: list[str], use_brightdata: bool = True) ->
                 return []
         tasks.append(("BrightData_HN", bd_with_timeout()))
 
-    # 2. HN Algolia — multiple queries
-    for q in queries[:4]:
-        tasks.append((f"HN:{q}", scrape_hackernews(q, 5)))
+    # 2. HN Algolia — all queries, more results
+    for q in queries[:6]:
+        tasks.append((f"HN:{q}", scrape_hackernews(q, 8)))
 
-    # 3. HN Recent — last 2 queries
-    for q in queries[:2]:
-        tasks.append((f"HN_recent:{q}", scrape_hackernews_recent(q, 4)))
+    # 3. HN Recent — more queries
+    for q in queries[:4]:
+        tasks.append((f"HN_recent:{q}", scrape_hackernews_recent(q, 5)))
 
     # 4. GitHub
-    for q in queries[:2]:
-        tasks.append((f"GitHub:{q}", scrape_github(q, 3)))
+    for q in queries[:3]:
+        tasks.append((f"GitHub:{q}", scrape_github(q, 4)))
 
     # Run all in parallel
     results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
