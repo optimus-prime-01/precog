@@ -101,7 +101,7 @@ async def ask_claude(system_prompt: str, user_prompt: str, max_tokens: int = 409
             except Exception as e:
                 last_error = e
                 error_str = str(e)
-                if "429" in error_str or "rate_limit" in error_str:
+                if "429" in error_str or "rate_limit" in error_str or "401" in error_str or "invalid_api_key" in error_str:
                     has_more = _groq_rotator.rotate()
                     if not has_more:
                         raise Exception(f"All {attempts} Groq keys exhausted: {error_str[:100]}")
