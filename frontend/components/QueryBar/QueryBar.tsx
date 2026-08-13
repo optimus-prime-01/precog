@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 function formatResponse(text: string) {
   return text
@@ -14,14 +14,14 @@ function formatResponse(text: string) {
 export default function QueryBar() {
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState("");
-  const [enriched, setEnriched] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showAnswer, setShowAnswer] = useState(true);
-  const [phase, setPhase] = useState<"idle" | "checking" | "scraping" | "ingesting" | "answering">("idle");
+  const [status, setStatus] = useState("");
   const [timer, setTimer] = useState(0);
+  const [enriching, setEnriching] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Timer
   useEffect(() => {
     if (loading) {
       setTimer(0);
@@ -32,48 +32,60 @@ export default function QueryBar() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [loading]);
 
-  // Phase simulation based on timer
+  // Countdown for enrichment wait
   useEffect(() => {
-    if (!loading) { setPhase("idle"); return; }
-    if (timer < 3) setPhase("checking");
-    else if (timer < 8) setPhase("scraping");
-    else if (timer < 15) setPhase("ingesting");
-    else setPhase("answering");
-  }, [timer, loading]);
+    if (countdown <= 0) return;
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim() || loading) return;
+  // When countdown hits 0, re-query automatically
+  useEffect(() => {
+    if (countdown === 0 && enriching) {
+      setEnriching(false);
+      doQuery(query, true);
+    }
+  }, [countdown, enriching]);
 
+  const doQuery = useCallback(async (q: string, isRetry: boolean = false) => {
+    if (!q.trim()) return;
     setLoading(true);
     setAnswer("");
-    setEnriched(null);
     setShowAnswer(true);
+    setStatus(isRetry ? "Re-querying with enriched graph..." : "Querying graph...");
 
     try {
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: query }),
+        body: JSON.stringify({ question: q }),
       });
       const data = await res.json();
-      setAnswer(data.answer || data.error || "No response.");
-      if (data.enriched) {
-        setEnriched(data.enriched_message || "Graph auto-enriched with new data");
+
+      if (data.enriched && !isRetry) {
+        // Data was enriched — don't show answer yet, wait for graph to update
+        setLoading(false);
+        setEnriching(true);
+        setCountdown(30);
+        setStatus("");
+        setAnswer("");
+        return;
       }
+
+      setAnswer(data.answer || data.error || "No response.");
+      setStatus("");
     } catch {
       setAnswer("Backend unreachable.");
+      setStatus("");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const phaseInfo: Record<string, { label: string; color: string }> = {
-    idle: { label: "", color: "" },
-    checking: { label: "Checking graph for relevant data...", color: "#8b5cf6" },
-    scraping: { label: "No data found — scraping web for info...", color: "#f59e0b" },
-    ingesting: { label: "Ingesting scraped data into graph...", color: "#06b6d4" },
-    answering: { label: "Generating answer from enriched graph...", color: "#22c55e" },
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query.trim() || loading || enriching) return;
+    doQuery(query);
   };
 
   return (
@@ -94,48 +106,63 @@ export default function QueryBar() {
         />
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || enriching}
           style={{
-            padding: "5px 16px", background: loading ? "#27272a" : "#8b5cf6",
+            padding: "5px 16px",
+            background: loading || enriching ? "#27272a" : "#8b5cf6",
             color: "#fff", border: "none", borderRadius: 4, fontSize: 12,
-            fontWeight: 600, cursor: loading ? "wait" : "pointer",
+            fontWeight: 600, cursor: loading || enriching ? "wait" : "pointer",
           }}
         >
-          {loading ? `${timer}s` : "Ask"}
+          {loading ? `${timer}s` : enriching ? `${countdown}s` : "Ask"}
         </button>
       </form>
 
-      {/* Loading status bar */}
+      {/* Loading bar */}
       {loading && (
         <div style={{ padding: "0 20px 8px" }}>
           <div style={{
-            display: "flex", alignItems: "center", gap: 10,
             padding: "8px 12px", background: "#111113",
             border: "1px solid #27272a", borderRadius: 6,
+            fontSize: 11, color: "#8b5cf6", display: "flex", alignItems: "center", gap: 8,
           }}>
-            {/* Progress dots */}
-            <div style={{ display: "flex", gap: 4 }}>
-              {["checking", "scraping", "ingesting", "answering"].map((p, i) => (
-                <div key={p} style={{
-                  width: 8, height: 8, borderRadius: "50%",
-                  background: phase === p ? phaseInfo[p].color :
-                    ["checking", "scraping", "ingesting", "answering"].indexOf(phase) > i ? "#3f3f46" : "#1c1c20",
-                  transition: "all 0.3s",
-                  animation: phase === p ? "pulse 1s infinite" : "none",
-                }} />
-              ))}
-            </div>
-            <span style={{ fontSize: 11, color: phaseInfo[phase]?.color || "#52525b" }}>
-              {phaseInfo[phase]?.label}
-            </span>
-            <span style={{ fontSize: 10, color: "#3f3f46", marginLeft: "auto" }}>{timer}s</span>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#8b5cf6", animation: "pulse 1s infinite" }} />
+            {status || "Processing..."}
+            <span style={{ marginLeft: "auto", color: "#3f3f46" }}>{timer}s</span>
           </div>
-          <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }`}</style>
+          <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
+        </div>
+      )}
+
+      {/* Enrichment waiting */}
+      {enriching && !loading && (
+        <div style={{ padding: "0 20px 8px" }}>
+          <div style={{
+            padding: "12px 14px", background: "rgba(245,158,11,0.06)",
+            border: "1px solid rgba(245,158,11,0.15)", borderRadius: 6,
+          }}>
+            <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 600, marginBottom: 6 }}>
+              No data found — scraping web and enriching graph...
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {/* Progress bar */}
+              <div style={{ flex: 1, height: 4, background: "#27272a", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", background: "#f59e0b", borderRadius: 2,
+                  width: `${((30 - countdown) / 30) * 100}%`, transition: "width 1s linear",
+                }} />
+              </div>
+              <span style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600, minWidth: 30 }}>{countdown}s</span>
+            </div>
+            <div style={{ fontSize: 10, color: "#71717a", marginTop: 6 }}>
+              Scraped data is being ingested into the graph. Auto re-querying when ready...
+            </div>
+          </div>
         </div>
       )}
 
       {/* Answer */}
-      {answer && showAnswer && !loading && (
+      {answer && showAnswer && !loading && !enriching && (
         <div style={{ padding: "0 20px 12px" }}>
           <div
             style={{
@@ -152,17 +179,6 @@ export default function QueryBar() {
             >
               &times;
             </button>
-
-            {enriched && (
-              <div style={{
-                fontSize: 11, color: "#22c55e", marginBottom: 10, padding: "6px 10px",
-                background: "rgba(34,197,94,0.08)", borderRadius: 4,
-                border: "1px solid rgba(34,197,94,0.15)",
-              }}>
-                {enriched}. New data added to graph.
-              </div>
-            )}
-
             <pre style={{
               fontSize: 12, color: "#a1a1aa", lineHeight: 1.7, margin: 0,
               whiteSpace: "pre-wrap", wordBreak: "break-word",
