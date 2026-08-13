@@ -65,8 +65,16 @@ class PredictionEngine:
             await asyncio.sleep(settings.scraper_interval_minutes * 60)
             await self.detect_all_predictions()
 
+    def _log(self, msg, level="info"):
+        try:
+            from api.routes import add_log
+            add_log("prediction", msg, level)
+        except Exception:
+            pass
+
     async def detect_all_predictions(self):
         """Run all prediction types."""
+        self._log("Running prediction analysis...")
         print("[Prediction Engine] Running analysis...")
         await self._detect_from_all_events()
         await self._detect_convergent_signals()
@@ -117,6 +125,7 @@ If no meaningful prediction, return {"predictions": []}""",
                             id=pid, text=pred["text"], conf=pred["confidence"],
                             reasoning=pred.get("reasoning", ""), timeframe=pred.get("timeframe", ""),
                         )
+                        self._log(f"Prediction: {pred['text'][:80]} (confidence: {pred['confidence']})", "success")
                         print(f"  🔮 Prediction: {pred['text'][:80]}... ({pred['confidence']})")
             except Exception as e:
                 print(f"  Prediction error: {str(e)[:80]}")

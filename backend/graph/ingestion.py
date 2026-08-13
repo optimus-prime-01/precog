@@ -20,6 +20,14 @@ from ai.contradiction_detector import detect_contradictions
 from config.scraper_registry import ScraperEntry
 
 
+def _log(source: str, msg: str, level: str = "info"):
+    try:
+        from api.routes import add_log
+        add_log(source, msg, level)
+    except Exception:
+        pass
+
+
 async def ingest_scraped_data(results: list[dict], scraper: ScraperEntry):
     """
     Main ingestion pipeline:
@@ -30,8 +38,12 @@ async def ingest_scraped_data(results: list[dict], scraper: ScraperEntry):
     5. Classify causal links between new and existing events
     6. Check for contradictions (soft invalidation)
     """
-    for item in results:
+    _log("ingestion", f"Starting ingestion: {len(results)} items from {scraper.name}")
+    for idx, item in enumerate(results):
         try:
+            title = item.get("title", str(item)[:50])
+            _log("ingestion", f"[{idx+1}/{len(results)}] Processing: {title[:60]}")
+
             # Step 1: Create Episode node for raw data (Graphiti episodic memory)
             episode = Episode(
                 source=scraper.name,
@@ -47,6 +59,12 @@ async def ingest_scraped_data(results: list[dict], scraper: ScraperEntry):
             extraction = await extract_entities_and_events(item, scraper)
             if not extraction:
                 continue
+
+            ent_names = [e.name for e in extraction.entities]
+            evt_titles = [e.title for e in extraction.events]
+            _log("extraction", f"Extracted {len(ent_names)} entities: {', '.join(ent_names[:5])}")
+            if evt_titles:
+                _log("extraction", f"Events: {', '.join(evt_titles[:3])}")
 
             async with neo4j_driver.session() as session:
                 # Step 3: Upsert entities (resolve duplicates, update summaries)
@@ -74,7 +92,10 @@ async def ingest_scraped_data(results: list[dict], scraper: ScraperEntry):
                     # Step 8: Check for contradictions (soft invalidation)
                     await detect_contradictions(session, event, extraction.entities)
 
+            _log("graph", f"Graph updated: +{len(extraction.entities)} entities, +{len(extraction.events)} events", "success")
+
         except Exception as e:
+            _log("ingestion", f"Error: {str(e)[:80]}", "error")
             print(f"    Ingestion error: {e}")
 
 

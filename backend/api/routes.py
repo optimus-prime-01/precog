@@ -7,6 +7,22 @@ from fastapi import APIRouter, Request
 from graph.connection import neo4j_driver
 from ai.claude_client import ask_claude, ask_claude_json
 from config.scraper_registry import registry
+import collections
+import datetime
+
+# In-memory log buffer — stores last 100 backend events
+_log_buffer: collections.deque = collections.deque(maxlen=100)
+
+
+def add_log(source: str, message: str, level: str = "info"):
+    """Add a log entry to the buffer."""
+    _log_buffer.append({
+        "time": datetime.datetime.utcnow().isoformat(),
+        "source": source,
+        "message": message,
+        "level": level,
+    })
+
 
 router = APIRouter()
 
@@ -329,6 +345,12 @@ Reason over this data to answer the question."""
         "enriched": enriched,
         "enriched_message": f"Graph auto-enriched with new data about '{relevance.get('search_query', '')}'" if enriched else None,
     }
+
+
+@router.get("/logs")
+async def get_logs():
+    """Return recent backend activity logs."""
+    return {"logs": list(_log_buffer)}
 
 
 @router.post("/clear-graph")

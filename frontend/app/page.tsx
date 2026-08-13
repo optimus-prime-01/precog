@@ -9,6 +9,7 @@ import QueryBar from "@/components/QueryBar/QueryBar";
 import TopicInput from "@/components/TopicInput/TopicInput";
 import EntityDetail from "@/components/EntityDetail/EntityDetail";
 import SelfHealDemo from "@/components/SelfHealDemo/SelfHealDemo";
+import LiveTerminal from "@/components/LiveTerminal/LiveTerminal";
 
 export default function Dashboard() {
   const [graphData, setGraphData] = useState(null);
@@ -191,6 +192,9 @@ export default function Dashboard() {
 
       {/* Entity Detail Panel — slides in from right on double-click */}
       <EntityDetail entityId={selectedEntityId} onClose={() => setSelectedEntityId(null)} />
+
+      {/* Live Terminal — bottom-right button, expands to show backend logs */}
+      <LiveTerminal />
     </div>
   );
 }
