@@ -361,6 +361,258 @@ async def clear_graph():
     return {"status": "ok", "message": "Graph cleared"}
 
 
+@router.get("/compare/{entity_id_a}/{entity_id_b}")
+async def compare_entities(entity_id_a: str, entity_id_b: str):
+    """Compare two entities — shared connections, shared events, unique events."""
+    async with neo4j_driver.session() as session:
+        # Entity A info
+        a_res = await session.run(
+            "MATCH (e:Entity {id: $id}) RETURN e.name AS name, e.type AS type",
+            id=entity_id_a,
+        )
+        entity_a = await a_res.single()
+        if not entity_a:
+            return {"error": "Entity A not found"}
+
+        # Entity B info
+        b_res = await session.run(
+            "MATCH (e:Entity {id: $id}) RETURN e.name AS name, e.type AS type",
+            id=entity_id_b,
+        )
+        entity_b = await b_res.single()
+        if not entity_b:
+            return {"error": "Entity B not found"}
+
+        # Shared connections — entities that both A and B connect to via events
+        shared_conn = await session.run(
+            """MATCH (a:Entity {id: $id_a})-[:PARTICIPATES_IN]->(evt:Event)<-[:PARTICIPATES_IN]-(shared:Entity)
+               WHERE (shared)-[:PARTICIPATES_IN]->(:Event)<-[:PARTICIPATES_IN]-(:Entity {id: $id_b})
+               AND shared.id <> $id_a AND shared.id <> $id_b
+               RETURN DISTINCT shared.name AS name, shared.type AS type""",
+            id_a=entity_id_a, id_b=entity_id_b,
+        )
+        shared_connections = [r.data() async for r in shared_conn]
+
+        # Shared events — events both entities participate in
+        shared_evt = await session.run(
+            """MATCH (a:Entity {id: $id_a})-[:PARTICIPATES_IN]->(evt:Event)<-[:PARTICIPATES_IN]-(b:Entity {id: $id_b})
+               RETURN evt.title AS title, toString(evt.event_time) AS event_time, evt.confidence AS confidence
+               ORDER BY evt.event_time DESC""",
+            id_a=entity_id_a, id_b=entity_id_b,
+        )
+        shared_events = [r.data() async for r in shared_evt]
+
+        # Unique events for A
+        unique_a = await session.run(
+            """MATCH (a:Entity {id: $id_a})-[:PARTICIPATES_IN]->(evt:Event)
+               WHERE NOT (evt)<-[:PARTICIPATES_IN]-(:Entity {id: $id_b})
+               RETURN evt.title AS title, toString(evt.event_time) AS event_time
+               ORDER BY evt.event_time DESC LIMIT 15""",
+            id_a=entity_id_a, id_b=entity_id_b,
+        )
+        unique_events_a = [r.data() async for r in unique_a]
+
+        # Unique events for B
+        unique_b = await session.run(
+            """MATCH (b:Entity {id: $id_b})-[:PARTICIPATES_IN]->(evt:Event)
+               WHERE NOT (evt)<-[:PARTICIPATES_IN]-(:Entity {id: $id_a})
+               RETURN evt.title AS title, toString(evt.event_time) AS event_time
+               ORDER BY evt.event_time DESC LIMIT 15""",
+            id_a=entity_id_a, id_b=entity_id_b,
+        )
+        unique_events_b = [r.data() async for r in unique_b]
+
+    return {
+        "entity_a": entity_a.data(),
+        "entity_b": entity_b.data(),
+        "shared_connections": shared_connections,
+        "shared_events": shared_events,
+        "unique_events_a": unique_events_a,
+        "unique_events_b": unique_events_b,
+    }
+
+
+@router.get("/export-report")
+async def export_report():
+    """Generate a text report of the entire graph state."""
+    async with neo4j_driver.session() as session:
+        # Entities
+        ent_result = await session.run(
+            "MATCH (e:Entity) RETURN e.name AS name, e.type AS type ORDER BY e.type, e.name"
+        )
+        entities = [r.data() async for r in ent_result]
+
+        # Events
+        evt_result = await session.run(
+            """MATCH (e:Event)
+               RETURN e.title AS title, toString(e.event_time) AS event_time,
+                      e.confidence AS confidence, e.source_scraper AS source
+               ORDER BY e.event_time DESC"""
+        )
+        events = [r.data() async for r in evt_result]
+
+        # Predictions
+        pred_result = await session.run(
+            """MATCH (p:Prediction)
+               RETURN p.text AS text, p.confidence AS confidence,
+                      p.prediction_type AS type, p.reasoning AS reasoning,
+                      p.timeframe AS timeframe
+               ORDER BY p.created_at DESC LIMIT 50"""
+        )
+        predictions = [r.data() async for r in pred_result]
+
+        # Contradictions
+        contra_result = await session.run(
+            """MATCH (c:Contradiction) WHERE c.status = 'active'
+               RETURN c.entity AS entity, c.fact_a AS fact_a, c.fact_b AS fact_b,
+                      c.analysis AS analysis, c.severity AS severity
+               ORDER BY c.created_at DESC"""
+        )
+        contradictions = [r.data() async for r in contra_result]
+
+        # Causal links count
+        causal_result = await session.run("MATCH ()-[r:CAUSES]->() RETURN count(r) AS count")
+        causal_count = (await causal_result.single())["count"]
+
+    # Build report text
+    lines = []
+    lines.append("=" * 60)
+    lines.append("PRECOG - Predictive Causal Context Graph Report")
+    lines.append(f"Generated: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    lines.append("=" * 60)
+    lines.append("")
+
+    # Stats
+    lines.append("--- GRAPH STATS ---")
+    lines.append(f"Entities: {len(entities)}")
+    lines.append(f"Events: {len(events)}")
+    lines.append(f"Causal Links: {causal_count}")
+    lines.append(f"Predictions: {len(predictions)}")
+    lines.append(f"Contradictions: {len(contradictions)}")
+    lines.append("")
+
+    # Entities
+    lines.append("--- ENTITIES ---")
+    for ent in entities:
+        lines.append(f"  [{ent['type']}] {ent['name']}")
+    lines.append("")
+
+    # Events
+    lines.append("--- EVENTS ---")
+    for evt in events:
+        date = evt.get("event_time", "N/A") or "N/A"
+        conf = evt.get("confidence")
+        conf_str = f" (confidence: {conf:.0%})" if conf else ""
+        source = evt.get("source", "")
+        source_str = f" [source: {source}]" if source else ""
+        lines.append(f"  {date[:10] if date != 'N/A' else date} | {evt['title']}{conf_str}{source_str}")
+    lines.append("")
+
+    # Predictions
+    lines.append("--- PREDICTIONS ---")
+    for pred in predictions:
+        conf = pred.get("confidence")
+        conf_str = f" ({conf:.0%})" if conf else ""
+        tf = pred.get("timeframe", "")
+        tf_str = f" [{tf}]" if tf else ""
+        lines.append(f"  {pred.get('type', 'prediction')}{conf_str}{tf_str}: {pred['text']}")
+        if pred.get("reasoning"):
+            lines.append(f"    Reasoning: {pred['reasoning'][:200]}")
+    lines.append("")
+
+    # Contradictions
+    lines.append("--- CONTRADICTIONS ---")
+    for c in contradictions:
+        lines.append(f"  Entity: {c['entity']} (severity: {c.get('severity', 'N/A')})")
+        lines.append(f"    A: {c['fact_a']}")
+        lines.append(f"    B: {c['fact_b']}")
+        if c.get("analysis"):
+            lines.append(f"    Analysis: {c['analysis'][:200]}")
+        lines.append("")
+
+    lines.append("=" * 60)
+    lines.append("End of Report")
+
+    return {"report": "\n".join(lines)}
+
+
+@router.get("/event/{event_id}")
+async def get_event_detail(event_id: str):
+    """Return full detail for an event — entities, causal parents/children, source episode."""
+    async with neo4j_driver.session() as session:
+        # Event info
+        evt = await session.run(
+            """MATCH (e:Event {id: $id})
+               RETURN e.title AS title, toString(e.event_time) AS event_time,
+                      e.confidence AS confidence, e.source_scraper AS source,
+                      e.summary AS summary""",
+            id=event_id,
+        )
+        event = await evt.single()
+        if not event:
+            return {"error": "Event not found"}
+
+        # Involved entities
+        ent_res = await session.run(
+            """MATCH (ent:Entity)-[:PARTICIPATES_IN]->(e:Event {id: $id})
+               RETURN ent.id AS id, ent.name AS name, ent.type AS type""",
+            id=event_id,
+        )
+        entities = [r.data() async for r in ent_res]
+
+        # Causal parents — events that caused this event
+        parents_res = await session.run(
+            """MATCH (parent:Event)-[r:CAUSES]->(e:Event {id: $id})
+               RETURN parent.id AS id, parent.title AS title,
+                      toString(parent.event_time) AS event_time,
+                      r.confidence AS confidence, r.reasoning AS reasoning""",
+            id=event_id,
+        )
+        causal_parents = [r.data() async for r in parents_res]
+
+        # Causal children — events this event caused
+        children_res = await session.run(
+            """MATCH (e:Event {id: $id})-[r:CAUSES]->(child:Event)
+               RETURN child.id AS id, child.title AS title,
+                      toString(child.event_time) AS event_time,
+                      r.confidence AS confidence, r.reasoning AS reasoning""",
+            id=event_id,
+        )
+        causal_children = [r.data() async for r in children_res]
+
+        # Source episode — the scraped data that produced this event
+        ep_res = await session.run(
+            """MATCH (e:Event {id: $id})<-[:PRODUCED]-(ep:Episode)
+               RETURN ep.source AS source, ep.source_type AS source_type,
+                      ep.title AS title, ep.content AS content, ep.url AS url,
+                      toString(ep.scraped_at) AS scraped_at
+               LIMIT 3""",
+            id=event_id,
+        )
+        episodes = [r.data() async for r in ep_res]
+
+        # Fallback: try MENTIONED_IN relationship for episodes
+        if not episodes:
+            ep_res2 = await session.run(
+                """MATCH (ent:Entity)-[:PARTICIPATES_IN]->(e:Event {id: $id})
+                   MATCH (ent)-[:MENTIONED_IN]->(ep:Episode)
+                   RETURN DISTINCT ep.source AS source, ep.source_type AS source_type,
+                          ep.title AS title, ep.content AS content, ep.url AS url,
+                          toString(ep.scraped_at) AS scraped_at
+                   LIMIT 3""",
+                id=event_id,
+            )
+            episodes = [r.data() async for r in ep_res2]
+
+    return {
+        "event": event.data(),
+        "entities": entities,
+        "causal_parents": causal_parents,
+        "causal_children": causal_children,
+        "episodes": episodes,
+    }
+
+
 @router.post("/add-topic")
 async def add_topic(request: Request):
     """

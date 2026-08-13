@@ -10,6 +10,8 @@ import TopicInput from "@/components/TopicInput/TopicInput";
 import EntityDetail from "@/components/EntityDetail/EntityDetail";
 import SelfHealDemo from "@/components/SelfHealDemo/SelfHealDemo";
 import LiveTerminal from "@/components/LiveTerminal/LiveTerminal";
+import ComparePanel from "@/components/ComparePanel/ComparePanel";
+import EventDetail from "@/components/EventDetail/EventDetail";
 
 export default function Dashboard() {
   const [graphData, setGraphData] = useState(null);
@@ -18,6 +20,8 @@ export default function Dashboard() {
   const [scrapers, setScrapers] = useState([]);
   const [activeTab, setActiveTab] = useState<"predictions" | "contradictions">("predictions");
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [showCompare, setShowCompare] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
   const fetchData = useCallback(async () => {
@@ -110,6 +114,52 @@ export default function Dashboard() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {lastUpdated && <span style={{ fontSize: 10, color: "#3f3f46" }}>Updated {lastUpdated}</span>}
+          <button
+            onClick={() => setShowCompare(true)}
+            style={{
+              padding: "5px 12px",
+              background: "transparent",
+              border: "1px solid #27272a",
+              color: "#a1a1aa",
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Compare
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch("/api/export-report");
+                const data = await res.json();
+                if (data.report) {
+                  const blob = new Blob([data.report], { type: "text/plain" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `precog-report-${new Date().toISOString().split("T")[0]}.txt`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }
+              } catch (e) {
+                console.error("Export failed:", e);
+              }
+            }}
+            style={{
+              padding: "5px 12px",
+              background: "transparent",
+              border: "1px solid #27272a",
+              color: "#a1a1aa",
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Export Report
+          </button>
           <SelfHealDemo />
           <TopicInput onTopicAdded={fetchData} />
           <ScraperStatus scrapers={scrapers} />
@@ -123,7 +173,7 @@ export default function Dashboard() {
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Graph */}
         <div style={{ flex: 1, position: "relative" }}>
-          <GraphExplorer data={graphData} onEntitySelect={setSelectedEntityId} predictionCount={predictions.length} contradictionCount={contradictions.length} />
+          <GraphExplorer data={graphData} onEntitySelect={setSelectedEntityId} onEventSelect={setSelectedEventId} predictionCount={predictions.length} contradictionCount={contradictions.length} />
         </div>
 
         {/* Right Panel */}
@@ -192,6 +242,17 @@ export default function Dashboard() {
 
       {/* Entity Detail Panel — slides in from right on double-click */}
       <EntityDetail entityId={selectedEntityId} onClose={() => setSelectedEntityId(null)} />
+
+      {/* Event Detail Modal — shown on double-click of event nodes */}
+      <EventDetail eventId={selectedEventId} onClose={() => setSelectedEventId(null)} />
+
+      {/* Compare Panel — compare two entities side by side */}
+      {showCompare && (
+        <ComparePanel
+          entities={graphData?.entities || []}
+          onClose={() => setShowCompare(false)}
+        />
+      )}
 
       {/* Live Terminal — bottom-right button, expands to show backend logs */}
       <LiveTerminal />

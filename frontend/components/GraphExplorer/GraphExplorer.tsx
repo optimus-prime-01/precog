@@ -126,7 +126,7 @@ function buildGraph(data: GraphData, mode: ViewMode) {
   return { nodes, edges };
 }
 
-export default function GraphExplorer({ data, onEntitySelect, predictionCount = 0, contradictionCount = 0 }: { data: GraphData | null; onEntitySelect?: (id: string) => void; predictionCount?: number; contradictionCount?: number }) {
+export default function GraphExplorer({ data, onEntitySelect, onEventSelect, predictionCount = 0, contradictionCount = 0 }: { data: GraphData | null; onEntitySelect?: (id: string) => void; onEventSelect?: (id: string) => void; predictionCount?: number; contradictionCount?: number }) {
   const [mode, setMode] = useState<ViewMode>("entities");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -230,9 +230,13 @@ export default function GraphExplorer({ data, onEntitySelect, predictionCount = 
   }, []);
 
   const onNodeDoubleClick: NodeMouseHandler = useCallback((_event, node) => {
-    if (node.id.startsWith("label-") || node.id.startsWith("evt_")) return;
+    if (node.id.startsWith("label-")) return;
+    if (node.id.startsWith("evt_")) {
+      onEventSelect?.(node.id);
+      return;
+    }
     onEntitySelect?.(node.id);
-  }, [onEntitySelect]);
+  }, [onEntitySelect, onEventSelect]);
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
