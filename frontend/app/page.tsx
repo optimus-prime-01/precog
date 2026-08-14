@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [showCompare, setShowCompare] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [graphTopic, setGraphTopic] = useState<string>("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -161,7 +162,7 @@ export default function Dashboard() {
             Export Report
           </button>
           <SelfHealDemo />
-          <TopicInput onTopicAdded={fetchData} />
+          <TopicInput onTopicAdded={(topic?: string) => { fetchData(); if (topic) setGraphTopic(topic); }} />
           <ScraperStatus scrapers={scrapers} />
         </div>
       </div>
@@ -173,7 +174,7 @@ export default function Dashboard() {
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Graph */}
         <div style={{ flex: 1, position: "relative" }}>
-          <GraphExplorer data={graphData} onEntitySelect={setSelectedEntityId} onEventSelect={setSelectedEventId} predictionCount={predictions.length} contradictionCount={contradictions.length} />
+          <GraphExplorer data={graphData} onEntitySelect={setSelectedEntityId} onEventSelect={setSelectedEventId} predictionCount={predictions.length} contradictionCount={contradictions.length} topic={graphTopic} />
         </div>
 
         {/* Right Panel */}

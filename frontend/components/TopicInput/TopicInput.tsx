@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 interface Props {
-  onTopicAdded: () => void;
+  onTopicAdded: (topic?: string) => void;
 }
 
 export default function TopicInput({ onTopicAdded }: Props) {
@@ -40,7 +40,7 @@ export default function TopicInput({ onTopicAdded }: Props) {
       const data = await res.json();
       setResult(data);
       if (data.status === "ok") {
-        onTopicAdded();
+        onTopicAdded(topic);
         setTimeout(() => {
           setResult(null);
           setOpen(false);

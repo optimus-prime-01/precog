@@ -126,7 +126,7 @@ function buildGraph(data: GraphData, mode: ViewMode) {
   return { nodes, edges };
 }
 
-export default function GraphExplorer({ data, onEntitySelect, onEventSelect, predictionCount = 0, contradictionCount = 0 }: { data: GraphData | null; onEntitySelect?: (id: string) => void; onEventSelect?: (id: string) => void; predictionCount?: number; contradictionCount?: number }) {
+export default function GraphExplorer({ data, onEntitySelect, onEventSelect, predictionCount = 0, contradictionCount = 0, topic = "" }: { data: GraphData | null; onEntitySelect?: (id: string) => void; onEventSelect?: (id: string) => void; predictionCount?: number; contradictionCount?: number; topic?: string }) {
   const [mode, setMode] = useState<ViewMode>("entities");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -252,6 +252,17 @@ export default function GraphExplorer({ data, onEntitySelect, onEventSelect, pre
 
   return (
     <div style={{ height: "100%", position: "relative" }}>
+      {/* Topic heading */}
+      {topic && (
+        <div style={{
+          position: "absolute", bottom: 56, left: 60, zIndex: 10,
+          fontSize: 13, fontWeight: 700, color: "#3f3f46",
+          textTransform: "uppercase", letterSpacing: "1.5px",
+        }}>
+          {topic}
+        </div>
+      )}
+
       {/* Top bar: search + view toggle */}
       <div style={{
         position: "absolute", top: 12, left: 12, right: 12, zIndex: 10,
