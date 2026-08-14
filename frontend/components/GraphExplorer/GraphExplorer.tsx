@@ -244,8 +244,66 @@ export default function GraphExplorer({ data, onEntitySelect, onEventSelect, pre
 
   if (!data || (data.entities.length === 0 && data.events.length === 0)) {
     return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#3f3f46", fontSize: 13 }}>
-        {data ? "No data yet." : "Loading..."}
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
+        {/* Animated graph skeleton */}
+        <svg width="200" height="200" viewBox="0 0 200 200">
+          {/* Animated nodes */}
+          {[
+            { cx: 100, cy: 40, delay: "0s" },
+            { cx: 40, cy: 100, delay: "0.3s" },
+            { cx: 160, cy: 100, delay: "0.6s" },
+            { cx: 60, cy: 160, delay: "0.9s" },
+            { cx: 140, cy: 160, delay: "1.2s" },
+          ].map((n, i) => (
+            <g key={i}>
+              <circle cx={n.cx} cy={n.cy} r="12" fill="none" stroke="#27272a" strokeWidth="1.5">
+                <animate attributeName="stroke" values="#27272a;#8b5cf6;#27272a" dur="2s" begin={n.delay} repeatCount="indefinite" />
+                <animate attributeName="r" values="12;14;12" dur="2s" begin={n.delay} repeatCount="indefinite" />
+              </circle>
+              <circle cx={n.cx} cy={n.cy} r="3" fill="#27272a">
+                <animate attributeName="fill" values="#27272a;#8b5cf6;#27272a" dur="2s" begin={n.delay} repeatCount="indefinite" />
+              </circle>
+            </g>
+          ))}
+          {/* Animated edges */}
+          {[
+            { x1: 100, y1: 40, x2: 40, y2: 100 },
+            { x1: 100, y1: 40, x2: 160, y2: 100 },
+            { x1: 40, y1: 100, x2: 60, y2: 160 },
+            { x1: 160, y1: 100, x2: 140, y2: 160 },
+            { x1: 60, y1: 160, x2: 140, y2: 160 },
+          ].map((e, i) => (
+            <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#1c1c20" strokeWidth="1">
+              <animate attributeName="stroke" values="#1c1c20;#3f3f46;#1c1c20" dur="2.5s" begin={`${i * 0.2}s`} repeatCount="indefinite" />
+            </line>
+          ))}
+        </svg>
+
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 14, color: "#52525b", fontWeight: 600, marginBottom: 6 }}>
+            {topic ? `Building graph for "${topic}"...` : "Waiting for data..."}
+          </div>
+          <div style={{ fontSize: 11, color: "#3f3f46" }}>
+            {topic ? "Scraping sources, extracting entities, building causal chains" : "Add a topic to start building the context graph"}
+          </div>
+          {topic && (
+            <div style={{ display: "flex", justifyContent: "center", gap: 4, marginTop: 12 }}>
+              {[0, 1, 2].map((i) => (
+                <div key={i} style={{
+                  width: 6, height: 6, borderRadius: "50%", background: "#8b5cf6",
+                  animation: `bounce 1.4s ease-in-out ${i * 0.16}s infinite`,
+                }} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <style>{`
+          @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+            40% { transform: scale(1); opacity: 1; }
+          }
+        `}</style>
       </div>
     );
   }
