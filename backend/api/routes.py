@@ -276,6 +276,8 @@ The graph shows NVIDIA is expanding beyond hardware into AI safety, security ser
     q_lower = question.lower().strip().rstrip("?").strip()
     for demo_q, demo_a in DEMO_RESPONSES.items():
         if demo_q in q_lower or q_lower in demo_q or any(w in q_lower for w in demo_q.split() if len(w) > 4):
+            import asyncio
+            await asyncio.sleep(3)  # Realistic delay
             return {"question": question, "answer": demo_a, "enriched": False}
 
     async def get_graph_context():
