@@ -90,18 +90,22 @@ async def ask_claude(system_prompt: str, user_prompt: str, max_tokens: int = 409
             try:
                 client = _groq_rotator.get_client()
                 response = await client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="qwen/qwen3.6-27b",
                     max_tokens=max_tokens,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                 )
-                return response.choices[0].message.content
+                text = response.choices[0].message.content or ""
+                # Strip Qwen <think> tags
+                import re
+                text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+                return text
             except Exception as e:
                 last_error = e
                 error_str = str(e)
-                if "429" in error_str or "rate_limit" in error_str or "401" in error_str or "invalid_api_key" in error_str:
+                if "429" in error_str or "rate_limit" in error_str or "401" in error_str or "invalid_api_key" in error_str or "404" in error_str or "model" in error_str.lower():
                     has_more = _groq_rotator.rotate()
                     if not has_more:
                         raise Exception(f"All {attempts} Groq keys exhausted: {error_str[:100]}")
